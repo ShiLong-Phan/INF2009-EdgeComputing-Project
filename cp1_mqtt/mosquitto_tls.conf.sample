@@ -1,0 +1,12 @@
+# Copy this file as needed and run:
+# mosquitto -c ./cp1_mqtt/mosquitto_tls.conf.sample -v
+
+listener 8883
+cafile certs/ca.crt
+certfile certs/server.crt
+keyfile certs/server.key
+
+# mTLS for CP1 test
+require_certificate true
+use_identity_as_username true
+allow_anonymous false
