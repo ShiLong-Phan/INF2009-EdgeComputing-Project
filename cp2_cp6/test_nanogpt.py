@@ -26,7 +26,7 @@ def test_nanogpt_vision(api_key: str, image_path: str):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Is this a BOTTLE or a CAN?"},
+                    {"type": "text", "text": "Is this a BOTTLE or a CAN or UNKNOWN? Answer with only one word."},
                     {
                         "type": "image_url",
                         "image_url": {

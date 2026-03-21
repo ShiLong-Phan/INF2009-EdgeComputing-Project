@@ -67,4 +67,4 @@ def verify_image(
         return "UNKNOWN", None, raw_text
         
     except Exception as e:
-        return "ERROR", None, str(e)
+        return str(e), None, str(e)
