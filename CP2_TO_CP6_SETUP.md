@@ -205,14 +205,56 @@ Features:
 1. Landing page with global KPIs and latest requests.
 2. Device leaderboard and per-device drilldown pages.
 3. Per-device scanned material mix as a numbered list and bar chart.
-4. UNKNOWN is intentionally categorized as Non-Recyclable for campaign planning.
+4. Latest request tables include an "Edge vs Cloud" column:
+   - MATCH: verify_status=ok and normalized edge/cloud labels match
+   - MISMATCH: verify_status=ok but labels differ
+   - N/A: cloud verification not completed (pending/skipped/error)
+5. Label normalization for comparison:
+   - BOTTLE and CAN are kept as-is
+   - all other labels are normalized to UNKNOWN
+6. Device detail mix logic:
+   - BOTTLE/CAN are counted only when cloud-confirmed
+   - non-confirmed bottle/can are bucketed as MISMATCH (separate from UNKNOWN)
+7. Built-in verify status legend on dashboard pages:
+   - ok, pending, skipped, error
+8. Device activity view based on last seen event timestamp (window configurable).
+9. Manual liveness check via Ping button (MQTT ping/pong request-response).
 
 Install and run on laptop:
 
 ```powershell
 pip install -r cp2_cp6\requirements-laptop.txt
-python cp2_cp6\dashboard_cp7.py --db-path .\data\edge_events.db --host 0.0.0.0 --port 5050
+python cp2_cp6\dashboard_cp7.py --db-path .\data\edge_events.db --broker-host DOMCOM2 --broker-port 8883 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --online-window-sec 180 --ping-timeout-sec 3.0 --host 0.0.0.0 --port 5050
 ```
+
+Optional dashboard ping topic overrides (defaults shown):
+
+```powershell
+--ping-request-topic-prefix edge/ping/request --ping-response-topic-prefix edge/ping/response
+```
+
+Pi runtime update for Ping support:
+
+```bash
+python3 cp2_cp6/edge_event_publisher_pi.py \
+  --broker-host DOMCOM2 \
+  --broker-port 8883 \
+  --topic edge/events/v1 \
+  --image-topic-prefix edge/images/v1 \
+  --device-id pi-edge-01 \
+  --ping-request-topic-prefix edge/ping/request \
+  --ping-response-topic-prefix edge/ping/response \
+  --trigger-mode inside_bin \
+  --ca-cert certs/ca.crt \
+  --client-cert certs/pi-client.crt \
+  --client-key certs/pi-client.key
+```
+
+Notes for Ping:
+1. Restart Pi publisher after pulling latest code so it subscribes to ping request topic.
+2. Dashboard Ping button publishes request to edge/ping/request/<device_id>.
+3. Pi replies on edge/ping/response/<device_id> with request_id correlation.
+4. Dashboard shows Alive (<latency_ms>) on success, or No response (timeout/error).
 
 Open browser:
 1. http://localhost:5050/
