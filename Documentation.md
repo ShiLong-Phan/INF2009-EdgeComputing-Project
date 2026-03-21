@@ -173,7 +173,16 @@ Scope:
 Exit criteria:
 - Dashboard provides enough information for demo and debugging.
 
-### CP8 - Edge Image Retention Controls (Optional but Plausible)
+### CP8 - ML/AI features
+From notes:
+Focus on AI and Machine Learning (ML) Analytics (Emphasis on Edge Analytics):
+• The project should focus on performing analytics at the edge, which involves processing data near its source rather than in 
+a centralised data-processing warehouse.
+• This approach should be practical and applicable in real-world scenarios.
+• Encourage the use of sophisticated ML techniques that are suited for edge devices for data analysis and interpretation.
+Maybe linear regression for predicting how categories will increase? Have no idea but we have the datetime for each entry.
+
+### CP9 - Edge Image Retention Controls (Optional but Plausible)
 
 Scope:
 - Add dashboard command to request edge cleanup.
