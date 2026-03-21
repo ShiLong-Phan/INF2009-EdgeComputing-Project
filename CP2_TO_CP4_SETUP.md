@@ -4,6 +4,7 @@ This document covers the implementation that was added in this repository for:
 - CP2 Event schema and reliability baseline (QoS1 + server dedup)
 - CP3 Sensor trigger pipeline
 - CP4 Capture + local inference baseline
+- Note: I will be using same .venv-laptop from CP1
 
 ## Added Files
 
@@ -43,8 +44,13 @@ Implemented in edge_event_publisher_pi.py:
 2. Trigger profiles:
    - inside_bin
    - outside_bin
-3. Per-profile speed and max distance gates.
-4. Debounce guard via --debounce-sec.
+3. Fast-wave speed gates tuned to reduce random triggers:
+   - inside_bin default minimum absolute speed: 65 cm/s
+   - outside_bin default minimum absolute speed: 70 cm/s
+4. Optional CLI tuning:
+   - --min-speed-cm-s to override speed threshold
+   - --max-distance-cm to add a distance limit when needed
+5. Debounce guard via --debounce-sec.
 
 ## CP4 Coverage
 
@@ -76,14 +82,7 @@ pip install -r cp2_cp4\requirements-laptop.txt
 2. Run receiver:
 
 ```powershell
-python cp2_cp4\server_event_receiver_laptop.py `
-  --broker-host DOMCOM2 `
-  --broker-port 8883 `
-  --topic edge/events/v1 `
-  --ca-cert .\certs\ca.crt `
-  --client-cert .\certs\laptop-client.crt `
-  --client-key .\certs\laptop-client.key `
-  --db-path .\data\edge_events.db
+python cp2_cp4\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db
 ```
 
 ## Pi Commands (Edge Runtime)
@@ -114,7 +113,8 @@ python3 cp2_cp4/edge_event_publisher_pi.py \
   --model-path mobilenet_v2_1.0_224.tflite \
   --label-path labels.txt \
   --edge-model-version mobilenetv2-baseline \
-  --capture-dir captures
+   --capture-dir captures \
+   --min-speed-cm-s 65
 ```
 
 3. Optional dedup test:

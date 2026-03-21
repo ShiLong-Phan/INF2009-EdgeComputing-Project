@@ -23,7 +23,7 @@ from google import genai
 from google.genai import types
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyA2m0kL79jHGKeACQJRYZj3V3FvRLi0Zp4")
+API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_API_KEY_HERE")  # <-- Set your API key here if not using env var
 MODEL   = "gemini-2.5-flash"   # Free tier: 15 req/min, 1M tokens/day
 MONITOR_INTERVAL = 0.25        # seconds between resource samples
 # ────────────────────────────────────────────────────────────────────────────────

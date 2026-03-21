@@ -23,12 +23,12 @@ MAX_TARGETS = 3
 
 TRIGGER_PROFILES = {
     "inside_bin": {
-        "min_abs_speed": 3,
-        "max_distance_cm": 140,
+        "min_abs_speed": 65,
+        "max_distance_cm": None,
     },
     "outside_bin": {
-        "min_abs_speed": 8,
-        "max_distance_cm": 250,
+        "min_abs_speed": 70,
+        "max_distance_cm": None,
     },
 }
 
@@ -57,6 +57,13 @@ class EdgePublisherApp:
             return False, None, None
 
         cfg = TRIGGER_PROFILES[self.args.trigger_mode]
+        min_abs_speed = self.args.min_speed_cm_s
+        if min_abs_speed is None:
+            min_abs_speed = cfg["min_abs_speed"]
+
+        max_distance_cm = self.args.max_distance_cm
+        if max_distance_cm is None:
+            max_distance_cm = cfg["max_distance_cm"]
 
         for i in range(MAX_TARGETS):
             offset = 4 + i * 8
@@ -66,16 +73,30 @@ class EdgePublisherApp:
             y_val = self.decode_signed(y_raw)
             spd_val = self.decode_signed(spd_raw)
 
+            # Follow prototype behavior: skip empty slot; otherwise require real movement speed.
             if x_val is None and y_val is None and spd_val is None:
                 continue
 
-            if y_val is None or spd_val is None:
+            has_target = (x_raw != 0) or (y_raw != 0)
+            if not has_target or spd_val is None:
                 continue
 
-            distance_cm = abs(y_val) / 10.0
+            distance_cm = abs(y_val) / 10.0 if y_val is not None else None
             speed = spd_val
 
-            if abs(speed) >= cfg["min_abs_speed"] and distance_cm <= cfg["max_distance_cm"]:
+            if abs(speed) < float(min_abs_speed):
+                continue
+
+            if distance_cm is not None and max_distance_cm is not None and distance_cm > float(max_distance_cm):
+                continue
+
+            print(
+                f"[SENSOR] Fast motion detected speed={speed} cm/s distance_cm={distance_cm} threshold={min_abs_speed}"
+            )
+            if distance_cm is None:
+                return True, None, speed
+
+            if max_distance_cm is None or distance_cm <= float(max_distance_cm):
                 return True, distance_cm, speed
 
         return False, None, None
@@ -298,6 +319,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--frame-width", type=int, default=640)
     parser.add_argument("--frame-height", type=int, default=480)
     parser.add_argument("--debounce-sec", type=float, default=1.0)
+    parser.add_argument(
+        "--min-speed-cm-s",
+        type=float,
+        default=None,
+        help="Absolute speed threshold for trigger. Defaults: inside_bin=65, outside_bin=70.",
+    )
+    parser.add_argument(
+        "--max-distance-cm",
+        type=float,
+        default=None,
+        help="Optional max distance gate. Leave unset to disable distance filtering.",
+    )
 
     parser.add_argument("--model-path", default="mobilenet_v2_1.0_224.tflite")
     parser.add_argument("--label-path", default="labels.txt")

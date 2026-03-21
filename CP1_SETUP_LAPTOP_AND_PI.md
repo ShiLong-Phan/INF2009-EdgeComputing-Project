@@ -119,7 +119,7 @@ allow_anonymous false
 Start broker:
 
 ```powershell
-mosquitto -c .\cp1_mqtt\mosquitto_tls.conf.sample -v
+mosquitto -c mosquitto_tls.conf -v
 ```
 
 Keep this terminal open.
@@ -130,12 +130,12 @@ Open another terminal in INF2009-EdgeComputing-Project:
 
 ```powershell
 .\.venv-laptop\Scripts\Activate.ps1
-python .\cp1_mqtt\mqtt_tls_subscriber_laptop.py `
-  --broker-host DOMCOM2 `
-  --broker-port 8883 `
-  --topic edge/cp1/hello `
-  --ca-cert .\certs\ca.crt `
-  --client-cert .\certs\laptop-client.crt `
+python .\cp1_mqtt\mqtt_tls_subscriber_laptop.py 
+  --broker-host DOMCOM2 
+  --broker-port 8883 
+  --topic edge/cp1/hello 
+  --ca-cert .\certs\ca.crt 
+  --client-cert .\certs\laptop-client.crt 
   --client-key .\certs\laptop-client.key
 ```
 
