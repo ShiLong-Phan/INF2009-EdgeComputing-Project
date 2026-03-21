@@ -8,7 +8,7 @@ from typing import Optional
 import paho.mqtt.client as mqtt
 
 from event_schema import decode_payload, validate_event_payload
-from gemini_verifier import verify_image
+from nanogpt_verifier import verify_image
 
 
 def utc_now_iso() -> str:
@@ -227,24 +227,24 @@ class ReceiverApp:
         if not image_path or not os.path.exists(image_path):
             return
 
-        if not self.args.gemini_api_key:
+        if not self.args.nanogpt_api_key:
             mark_verify_result(
                 self.args.db_path,
                 event_id,
                 "error",
                 None,
                 None,
-                "GEMINI_API_KEY not set",
+                "NANOGPT_API_KEY not set",
                 None,
             )
-            print(f"[SRV] Verify error event_id={event_id} missing GEMINI_API_KEY")
+            print(f"[SRV] Verify error event_id={event_id} missing NANOGPT_API_KEY")
             return
 
         try:
             label, confidence, raw_text = verify_image(
-                api_key=self.args.gemini_api_key,
+                api_key=self.args.nanogpt_api_key,
                 image_path=image_path,
-                model=self.args.gemini_model,
+                model=self.args.nanogpt_model,
             )
             mark_verify_result(
                 self.args.db_path,
@@ -351,11 +351,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--db-path", default="data/edge_events.db")
     parser.add_argument("--image-store-dir", default="data/images")
-    parser.add_argument("--gemini-model", default="gemini-2.5-flash")
+    parser.add_argument("--nanogpt-model", default="qwen3.5-27b-vision")
     parser.add_argument(
-        "--gemini-api-key",
-        default=os.getenv("GEMINI_API_KEY", ""),
-        help="Gemini API key. Defaults to GEMINI_API_KEY env var.",
+        "--nanogpt-api-key",
+        default=os.getenv("NANOGPT_API_KEY", ""),
+        help="NanoGPT API key. Defaults to NANOGPT_API_KEY env var.",
     )
     return parser
 

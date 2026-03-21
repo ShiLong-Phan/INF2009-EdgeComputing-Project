@@ -13,7 +13,7 @@ This document covers the implementation that was added in this repository for:
 - cp2_cp6/edge_event_publisher_pi.py
 - cp2_cp6/pi_outbox.py
 - cp2_cp6/server_event_receiver_laptop.py
-- cp2_cp6/gemini_verifier.py
+- cp2_cp6/nanogpt_verifier.py
 - cp2_cp6/requirements-pi.txt
 - cp2_cp6/requirements-laptop.txt
 
@@ -115,32 +115,20 @@ pip install --upgrade pip
 pip install -r cp2_cp6\requirements-laptop.txt
 ```
 
-Set Gemini API key in the same shell before running receiver:
+Set NanoGPT API key in the same shell before running receiver:
 
 ```powershell
-$env:GEMINI_API_KEY = "<YOUR_API_KEY>"
+$env:NANOGPT_API_KEY = "<YOUR_API_KEY>"
 ```
 
-2. Run receiver:
+''' CMD
+set NANOGPT_API_KEY=your_actual_key_here
+'''
+
+2. Run receiver (now using Qwen via NanoGPT):
 
 ```powershell
-python cp2_cp6\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db --image-store-dir .\data\images --gemini-model gemini-2.5-flash
-```
-
-## Pi Commands (Edge Runtime)
-
-Run on your actual Pi after pulling this repo.
-
-1. Create environment and install:
-
-```bash
-python3 -m venv .venv-cp2-pi
-source .venv-cp2-pi/bin/activate
-pip install --upgrade pip
-pip install -r cp2_cp6/requirements-pi.txt
-```
-
-2. Run edge pipeline:
+python cp2_cp6\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db --image-store-dir .\data\images --nanogpt-model qwen3.5-27b-vision
 
 ```bash
 python3 cp2_cp6/edge_event_publisher_pi.py \

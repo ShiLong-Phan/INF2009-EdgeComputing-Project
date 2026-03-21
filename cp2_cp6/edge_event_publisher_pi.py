@@ -298,8 +298,12 @@ class EdgePublisherApp:
         if self.args.insecure:
             client.tls_insecure_set(True)
 
-        client.connect(self.args.broker_host, self.args.broker_port, keepalive=60)
-        client.loop_start()
+        try:
+            client.connect(self.args.broker_host, self.args.broker_port, keepalive=60)
+            client.loop_start()
+            print(f"[EDGE] Connected to broker: {self.args.broker_host}")
+        except Exception as e:
+            print(f"[EDGE] Initial connection failed ({e}). Entering offline mode.")
 
         print("[EDGE] CP2-CP4 pipeline running. Press Ctrl+C to stop.")
 
