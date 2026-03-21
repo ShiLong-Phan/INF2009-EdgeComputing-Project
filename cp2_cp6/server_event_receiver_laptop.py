@@ -257,6 +257,8 @@ class ReceiverApp:
             )
             print(f"[SRV] Verify ok event_id={event_id} label={label}")
         except Exception as ex:
+            import traceback
+            error_details = f"{str(ex)}\n{traceback.format_exc()}"
             mark_verify_result(
                 self.args.db_path,
                 event_id,
@@ -266,7 +268,7 @@ class ReceiverApp:
                 str(ex),
                 None,
             )
-            print(f"[SRV] Verify error event_id={event_id} err={ex}")
+            print(f"[SRV] Verify error event_id={event_id} err={error_details}")
 
     def on_connect(self, client, _userdata, _flags, reason_code, _properties) -> None:
         if reason_code == 0:

@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import requests
 
 # Nanogpt usually follows the OpenAI/OpenRouter standard
-NANOGPT_ENDPOINT = "https://nanogpt.com/api/v1/chat/completions"
+NANOGPT_ENDPOINT = "https://nano-gpt.com/api/v1/chat/completions"
 
 PROMPT = (
     "Look at this image carefully.\n"
