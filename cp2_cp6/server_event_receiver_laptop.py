@@ -203,6 +203,8 @@ def mark_verify_result(
 class ReceiverApp:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
+        self.args.db_path = os.path.abspath(self.args.db_path)
+        self.args.image_store_dir = os.path.abspath(self.args.image_store_dir)
         os.makedirs(self.args.image_store_dir, exist_ok=True)
 
     def _is_image_topic(self, topic: str) -> bool:

@@ -10,6 +10,41 @@ from flask import Flask, abort, render_template, send_file
 DEFAULT_DB_PATH = "data/edge_events.db"
 
 
+def _resolve_existing_image_path(image_path: str, db_path: str) -> Optional[str]:
+    raw = (image_path or "").strip()
+    if not raw:
+        return None
+
+    candidates: List[str] = []
+    if os.path.isabs(raw):
+        candidates.append(raw)
+    else:
+        db_abs = os.path.abspath(db_path)
+        db_dir = os.path.dirname(db_abs)
+        db_parent = os.path.dirname(db_dir) if db_dir else db_dir
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Try common roots so existing DB rows remain readable across launch locations.
+        candidates.extend(
+            [
+                os.path.abspath(raw),
+                os.path.abspath(os.path.join(db_dir, raw)),
+                os.path.abspath(os.path.join(db_parent, raw)),
+                os.path.abspath(os.path.join(module_dir, raw)),
+                os.path.abspath(os.path.join(module_dir, "..", raw)),
+            ]
+        )
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 def _normalize_label(label: Optional[str]) -> str:
     raw = (label or "").strip().lower()
     if not raw or raw == "unknown":
@@ -125,7 +160,7 @@ def _device_stats(rows: List[sqlite3.Row]) -> List[Dict[str, object]]:
 
 def create_app(db_path: str) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
-    app.config["DB_PATH"] = db_path
+    app.config["DB_PATH"] = os.path.abspath(db_path)
 
     @app.route("/")
     def dashboard_home():
@@ -174,8 +209,8 @@ def create_app(db_path: str) -> Flask:
         if row is None or not row["image_path"]:
             abort(404, description="Image not found")
 
-        image_path = row["image_path"]
-        if not os.path.exists(image_path):
+        image_path = _resolve_existing_image_path(row["image_path"], app.config["DB_PATH"])
+        if image_path is None:
             abort(404, description="Image file missing on disk")
 
         return send_file(image_path)
