@@ -19,6 +19,15 @@
   </header>
 
   <main class="container">
+    <section class="panel legend-panel" aria-label="Verify status legend">
+      <h2>Verify Status Legend</h2>
+      <ul class="status-legend">
+        <li><span class="status-pill status-ok">ok</span> Cloud check ran successfully and returned a label.</li>
+        <li><span class="status-pill status-pending">pending</span> Awaiting cloud verification (or image not yet available).</li>
+        <li><span class="status-pill status-skipped">skipped</span> Cloud check intentionally not run (for example, missing API key).</li>
+        <li><span class="status-pill status-error">error</span> Cloud check was attempted but failed.</li>
+      </ul>
+    </section>
     {% block content %}{% endblock %}
   </main>
 </body>

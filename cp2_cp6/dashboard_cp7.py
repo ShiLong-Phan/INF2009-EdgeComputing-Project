@@ -53,7 +53,7 @@ def _normalize_label(label: Optional[str]) -> str:
         return "BOTTLE"
     if "can" in raw:
         return "CAN"
-    return "OTHER"
+    return "UNKNOWN"
 
 
 def _is_recyclable(normalized_label: str) -> bool:
@@ -129,9 +129,21 @@ def _build_summary(rows: List[sqlite3.Row]) -> Dict[str, object]:
 
 
 def _scan_mix(rows: List[sqlite3.Row]) -> List[Dict[str, object]]:
-    counts: Dict[str, int] = {"BOTTLE": 0, "CAN": 0, "UNKNOWN": 0, "OTHER": 0}
+    counts: Dict[str, int] = {"BOTTLE": 0, "CAN": 0, "MISMATCH": 0, "UNKNOWN": 0}
     for row in rows:
-        counts[_normalize_label(row["edge_pred_label"])] += 1
+        edge_label = _normalize_label(row["edge_pred_label"])
+        verify_status = (row["verify_status"] or "").strip().lower()
+        cloud_label = _normalize_label(row["verify_label"])
+
+        # For chart/list reporting, bottle/can must be cloud-confirmed; otherwise mark mismatch.
+        if edge_label in {"BOTTLE", "CAN"}:
+            if verify_status == "ok" and cloud_label == edge_label:
+                counts[edge_label] += 1
+            else:
+                counts["MISMATCH"] += 1
+            continue
+
+        counts["UNKNOWN"] += 1
 
     ordered = sorted(counts.items(), key=lambda item: item[1], reverse=True)
     result: List[Dict[str, object]] = []
@@ -142,7 +154,13 @@ def _scan_mix(rows: List[sqlite3.Row]) -> List[Dict[str, object]]:
             {
                 "label": label,
                 "count": count,
-                "category": "Recyclable" if _is_recyclable(label) else "Non-Recyclable",
+                "category": (
+                    "Recyclable"
+                    if _is_recyclable(label)
+                    else "Mismatch"
+                    if label == "MISMATCH"
+                    else "Non-Recyclable"
+                ),
             }
         )
     return result
@@ -158,6 +176,25 @@ def _device_stats(rows: List[sqlite3.Row]) -> List[Dict[str, object]]:
     return [{"device_id": d, "count": c} for d, c in ranked]
 
 
+def _edge_cloud_match_status(row: sqlite3.Row) -> str:
+    verify_status = (row["verify_status"] or "").strip().lower()
+    if verify_status != "ok":
+        return "N/A"
+
+    edge_label = _normalize_label(row["edge_pred_label"])
+    cloud_label = _normalize_label(row["verify_label"])
+    return "MATCH" if edge_label == cloud_label else "MISMATCH"
+
+
+def _prepare_latest_rows(rows: List[sqlite3.Row], limit: int) -> List[Dict[str, object]]:
+    latest: List[Dict[str, object]] = []
+    for row in rows[:limit]:
+        row_dict = dict(row)
+        row_dict["match_status"] = _edge_cloud_match_status(row)
+        latest.append(row_dict)
+    return latest
+
+
 def create_app(db_path: str) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["DB_PATH"] = os.path.abspath(db_path)
@@ -167,7 +204,7 @@ def create_app(db_path: str) -> Flask:
         rows = _load_events(app.config["DB_PATH"])
         summary = _build_summary(rows)
         devices = _device_stats(rows)
-        latest = rows[:25]
+        latest = _prepare_latest_rows(rows, limit=25)
         return render_template(
             "dashboard_home.html",
             summary=summary,
@@ -183,7 +220,7 @@ def create_app(db_path: str) -> Flask:
 
         summary = _build_summary(rows)
         mix = _scan_mix(rows)
-        latest = rows[:30]
+        latest = _prepare_latest_rows(rows, limit=30)
 
         chart_labels = [m["label"] for m in mix]
         chart_counts = [m["count"] for m in mix]

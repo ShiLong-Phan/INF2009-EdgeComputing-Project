@@ -48,6 +48,7 @@
         <th>Edge Label</th>
         <th>Cloud Label</th>
         <th>Verify Status</th>
+        <th>Edge vs Cloud</th>
         <th>Image</th>
       </tr>
     </thead>
@@ -59,6 +60,7 @@
         <td>{{ row.edge_pred_label }}</td>
         <td>{{ row.verify_label or "-" }}</td>
         <td>{{ row.verify_status }}</td>
+        <td>{{ row.match_status }}</td>
         <td>
           {% if row.image_path %}
             <a href="{{ url_for('view_image', event_id=row.event_id) }}" target="_blank">View</a>

@@ -21,11 +21,11 @@
       {% for item in mix %}
       <li>
         {{ item.label }} - {{ item.count }} scans
-        <span class="tag {{ 'tag-green' if item.category == 'Recyclable' else 'tag-red' }}">{{ item.category }}</span>
+        <span class="tag {% if item.category == 'Recyclable' %}tag-green{% elif item.category == 'Mismatch' %}tag-amber{% else %}tag-red{% endif %}">{{ item.category }}</span>
       </li>
       {% endfor %}
     </ol>
-    <p class="hint">UNKNOWN is intentionally grouped as Non-Recyclable for campaign planning.</p>
+    <p class="hint">BOTTLE/CAN are listed only when cloud-confirmed. Non-confirmed bottle/can results are grouped as MISMATCH.</p>
   </article>
 
   <article class="panel">
@@ -44,6 +44,7 @@
         <th>Edge Conf</th>
         <th>Verify Status</th>
         <th>Cloud Label</th>
+        <th>Edge vs Cloud</th>
         <th>Image</th>
       </tr>
     </thead>
@@ -55,6 +56,7 @@
         <td>{{ '%.3f'|format(row.edge_confidence or 0.0) }}</td>
         <td>{{ row.verify_status }}</td>
         <td>{{ row.verify_label or '-' }}</td>
+        <td>{{ row.match_status }}</td>
         <td>
           {% if row.image_path %}
             <a href="{{ url_for('view_image', event_id=row.event_id) }}" target="_blank">View</a>
@@ -71,7 +73,11 @@
 <script>
   const labels = {{ chart_labels|safe }};
   const data = {{ chart_counts|safe }};
-  const background = labels.map(lbl => (lbl === "BOTTLE" || lbl === "CAN") ? "#1f8a4d" : "#c0392b");
+  const background = labels.map(lbl => {
+    if (lbl === "BOTTLE" || lbl === "CAN") return "#1f8a4d";
+    if (lbl === "MISMATCH") return "#d35400";
+    return "#c0392b";
+  });
 
   new Chart(document.getElementById("scanMixChart"), {
     type: "bar",
