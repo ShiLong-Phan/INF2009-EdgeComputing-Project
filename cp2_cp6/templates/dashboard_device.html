@@ -3,7 +3,16 @@
 {% block content %}
 <section class="panel">
   <h2>Device Detail: {{ device_id }}</h2>
-  <p>This page tracks scan behavior for targeted recycling campaigns.</p>
+  <p>
+    {% if device_presence.seconds_since_last_seen is not none %}
+      Last seen {{ device_presence.seconds_since_last_seen }}s ago.
+    {% else %}
+      Last seen unknown.
+    {% endif %}
+    Active window: {{ online_window_sec }}s.
+    <button type="button" class="ping-btn" onclick="pingDevice('{{ device_id }}', this)">Ping Device</button>
+    <span class="ping-result" aria-live="polite"></span>
+  </p>
 </section>
 
 <section class="cards">
@@ -71,6 +80,33 @@
 </section>
 
 <script>
+  async function pingDevice(deviceId, button) {
+    const resultEl = button.nextElementSibling;
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = "Pinging...";
+    resultEl.textContent = "";
+    resultEl.className = "ping-result";
+
+    try {
+      const response = await fetch(`/api/ping/${encodeURIComponent(deviceId)}`, { method: "POST" });
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        resultEl.textContent = `Alive (${payload.latency_ms} ms)`;
+        resultEl.classList.add("ping-ok");
+      } else {
+        resultEl.textContent = `No response (${payload.error || "error"})`;
+        resultEl.classList.add("ping-fail");
+      }
+    } catch (_err) {
+      resultEl.textContent = "Ping failed";
+      resultEl.classList.add("ping-fail");
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
   const labels = {{ chart_labels|safe }};
   const data = {{ chart_counts|safe }};
   const background = labels.map(lbl => {

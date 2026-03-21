@@ -147,3 +147,45 @@ li { margin: 8px 0; }
   color: #8b1f13;
   border-color: #efb4ab;
 }
+
+.status-online {
+  background: #ddf5e5;
+  color: #136a35;
+  border-color: #9ad7af;
+}
+
+.status-offline {
+  background: #fde5e1;
+  color: #8b1f13;
+  border-color: #efb4ab;
+}
+
+.ping-btn {
+  border: 1px solid #9bb8e8;
+  background: #eef4ff;
+  color: #1f3e78;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ping-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.ping-result {
+  margin-left: 8px;
+  font-size: 0.85rem;
+}
+
+.ping-ok {
+  color: #136a35;
+  font-weight: 600;
+}
+
+.ping-fail {
+  color: #8b1f13;
+  font-weight: 600;
+}

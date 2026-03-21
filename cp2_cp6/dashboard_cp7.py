@@ -2,12 +2,23 @@ import argparse
 import json
 import os
 import sqlite3
+import ssl
+import threading
+import time
+import uuid
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-from flask import Flask, abort, render_template, send_file
+import paho.mqtt.client as mqtt
+from flask import Flask, abort, jsonify, render_template, send_file
 
 
 DEFAULT_DB_PATH = "data/edge_events.db"
+DEFAULT_ONLINE_WINDOW_SEC = 180
+DEFAULT_BROKER_PORT = 8883
+DEFAULT_PING_REQUEST_TOPIC_PREFIX = "edge/ping/request"
+DEFAULT_PING_RESPONSE_TOPIC_PREFIX = "edge/ping/response"
+DEFAULT_PING_TIMEOUT_SEC = 3.0
 
 
 def _resolve_existing_image_path(image_path: str, db_path: str) -> Optional[str]:
@@ -167,13 +178,160 @@ def _scan_mix(rows: List[sqlite3.Row]) -> List[Dict[str, object]]:
 
 
 def _device_stats(rows: List[sqlite3.Row]) -> List[Dict[str, object]]:
-    per_device: Dict[str, int] = {}
+    per_device: Dict[str, Dict[str, object]] = {}
     for row in rows:
         device = row["device_id"]
-        per_device[device] = per_device.get(device, 0) + 1
+        stats = per_device.setdefault(
+            device,
+            {
+                "count": 0,
+                "last_seen_utc": None,
+            },
+        )
+        stats["count"] = int(stats["count"]) + 1
 
-    ranked = sorted(per_device.items(), key=lambda x: x[1], reverse=True)
-    return [{"device_id": d, "count": c} for d, c in ranked]
+        ts = row["timestamp_utc"]
+        if ts and (stats["last_seen_utc"] is None or ts > stats["last_seen_utc"]):
+            stats["last_seen_utc"] = ts
+
+    ranked = sorted(
+        per_device.items(),
+        key=lambda x: int(x[1]["count"]),
+        reverse=True,
+    )
+    return [
+        {
+            "device_id": d,
+            "count": int(info["count"]),
+            "last_seen_utc": info["last_seen_utc"],
+        }
+        for d, info in ranked
+    ]
+
+
+def _parse_utc_iso(ts: Optional[str]) -> Optional[datetime]:
+    if not ts:
+        return None
+    try:
+        normalized = ts.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _attach_presence(devices: List[Dict[str, object]], online_window_sec: int) -> List[Dict[str, object]]:
+    now_utc = datetime.now(timezone.utc)
+    result: List[Dict[str, object]] = []
+
+    for device in devices:
+        last_seen_raw = device.get("last_seen_utc")
+        last_seen_dt = _parse_utc_iso(last_seen_raw if isinstance(last_seen_raw, str) else None)
+
+        seconds_since_last_seen: Optional[int] = None
+        status = "offline"
+        if last_seen_dt is not None:
+            delta_sec = max(0, int((now_utc - last_seen_dt).total_seconds()))
+            seconds_since_last_seen = delta_sec
+            if delta_sec <= int(online_window_sec):
+                status = "online"
+
+        row = dict(device)
+        row["status"] = status
+        row["seconds_since_last_seen"] = seconds_since_last_seen
+        result.append(row)
+
+    return result
+
+
+def _presence_summary(devices: List[Dict[str, object]]) -> Dict[str, int]:
+    online = sum(1 for d in devices if d.get("status") == "online")
+    offline = sum(1 for d in devices if d.get("status") == "offline")
+    return {"online": online, "offline": offline}
+
+
+def _ping_device_over_mqtt(app: Flask, device_id: str) -> Tuple[bool, Dict[str, object]]:
+    request_id = str(uuid.uuid4())
+    request_topic = f"{app.config['PING_REQUEST_TOPIC_PREFIX'].rstrip('/')}/{device_id}"
+    response_topic = f"{app.config['PING_RESPONSE_TOPIC_PREFIX'].rstrip('/')}/{device_id}"
+
+    done = threading.Event()
+    start_monotonic = time.monotonic()
+    result: Dict[str, object] = {
+        "ok": False,
+        "device_id": device_id,
+        "request_id": request_id,
+        "timeout_sec": app.config["PING_TIMEOUT_SEC"],
+    }
+
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+
+    def on_connect(_client, _userdata, _flags, reason_code, _properties) -> None:
+        if reason_code != 0:
+            result["error"] = f"connect_failed:{reason_code}"
+            done.set()
+            return
+        _client.subscribe(response_topic, qos=1)
+
+        payload = json.dumps({"request_id": request_id, "timestamp_utc": datetime.now(timezone.utc).isoformat()})
+        _client.publish(request_topic, payload=payload, qos=1, retain=False)
+
+    def on_message(_client, _userdata, msg: mqtt.MQTTMessage) -> None:
+        try:
+            body = json.loads(msg.payload.decode("utf-8", errors="strict"))
+        except Exception:
+            return
+
+        if body.get("request_id") != request_id:
+            return
+
+        latency_ms = int((time.monotonic() - start_monotonic) * 1000)
+        result.update(
+            {
+                "ok": True,
+                "latency_ms": latency_ms,
+                "response": body,
+            }
+        )
+        done.set()
+
+    client.on_connect = on_connect
+    client.on_message = on_message
+
+    try:
+        ca_cert = (app.config.get("CA_CERT") or "").strip()
+        client_cert = (app.config.get("CLIENT_CERT") or "").strip()
+        client_key = (app.config.get("CLIENT_KEY") or "").strip()
+
+        if ca_cert and client_cert and client_key:
+            client.tls_set(
+                ca_certs=ca_cert,
+                certfile=client_cert,
+                keyfile=client_key,
+                cert_reqs=ssl.CERT_REQUIRED,
+                tls_version=ssl.PROTOCOL_TLS_CLIENT,
+            )
+            if app.config.get("INSECURE"):
+                client.tls_insecure_set(True)
+
+        client.connect(app.config["BROKER_HOST"], int(app.config["BROKER_PORT"]), keepalive=30)
+        client.loop_start()
+        done.wait(timeout=float(app.config["PING_TIMEOUT_SEC"]))
+    except Exception as ex:
+        result["error"] = str(ex)
+    finally:
+        client.loop_stop()
+        try:
+            client.disconnect()
+        except Exception:
+            pass
+
+    if not result.get("ok") and "error" not in result:
+        result["error"] = "timeout"
+
+    return bool(result.get("ok")), result
 
 
 def _edge_cloud_match_status(row: sqlite3.Row) -> str:
@@ -198,19 +356,32 @@ def _prepare_latest_rows(rows: List[sqlite3.Row], limit: int) -> List[Dict[str, 
 def create_app(db_path: str) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["DB_PATH"] = os.path.abspath(db_path)
+    app.config["ONLINE_WINDOW_SEC"] = DEFAULT_ONLINE_WINDOW_SEC
 
     @app.route("/")
     def dashboard_home():
         rows = _load_events(app.config["DB_PATH"])
         summary = _build_summary(rows)
-        devices = _device_stats(rows)
+        devices = _attach_presence(_device_stats(rows), int(app.config["ONLINE_WINDOW_SEC"]))
+        presence = _presence_summary(devices)
         latest = _prepare_latest_rows(rows, limit=25)
         return render_template(
             "dashboard_home.html",
             summary=summary,
             devices=devices,
+            presence=presence,
+            online_window_sec=app.config["ONLINE_WINDOW_SEC"],
             latest=latest,
         )
+
+    @app.post("/api/ping/<device_id>")
+    def api_ping(device_id: str):
+        ok, payload = _ping_device_over_mqtt(app, device_id)
+        if ok:
+            return jsonify(payload), 200
+        if payload.get("error") == "timeout":
+            return jsonify(payload), 504
+        return jsonify(payload), 500
 
     @app.route("/device/<device_id>")
     def dashboard_device(device_id: str):
@@ -221,6 +392,10 @@ def create_app(db_path: str) -> Flask:
         summary = _build_summary(rows)
         mix = _scan_mix(rows)
         latest = _prepare_latest_rows(rows, limit=30)
+        device_presence = _attach_presence(
+            [{"device_id": device_id, "count": len(rows), "last_seen_utc": rows[0]["timestamp_utc"]}],
+            int(app.config["ONLINE_WINDOW_SEC"]),
+        )[0]
 
         chart_labels = [m["label"] for m in mix]
         chart_counts = [m["count"] for m in mix]
@@ -231,6 +406,8 @@ def create_app(db_path: str) -> Flask:
             summary=summary,
             mix=mix,
             latest=latest,
+            device_presence=device_presence,
+            online_window_sec=app.config["ONLINE_WINDOW_SEC"],
             chart_labels=json.dumps(chart_labels),
             chart_counts=json.dumps(chart_counts),
         )
@@ -258,6 +435,16 @@ def create_app(db_path: str) -> Flask:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CP7 multi-device Flask dashboard")
     parser.add_argument("--db-path", default=DEFAULT_DB_PATH)
+    parser.add_argument("--broker-host", default="DOMCOM2")
+    parser.add_argument("--broker-port", type=int, default=DEFAULT_BROKER_PORT)
+    parser.add_argument("--ca-cert", default="certs/ca.crt")
+    parser.add_argument("--client-cert", default="certs/laptop-client.crt")
+    parser.add_argument("--client-key", default="certs/laptop-client.key")
+    parser.add_argument("--insecure", action="store_true")
+    parser.add_argument("--ping-request-topic-prefix", default=DEFAULT_PING_REQUEST_TOPIC_PREFIX)
+    parser.add_argument("--ping-response-topic-prefix", default=DEFAULT_PING_RESPONSE_TOPIC_PREFIX)
+    parser.add_argument("--ping-timeout-sec", type=float, default=DEFAULT_PING_TIMEOUT_SEC)
+    parser.add_argument("--online-window-sec", type=int, default=DEFAULT_ONLINE_WINDOW_SEC)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5050)
     parser.add_argument("--debug", action="store_true")
@@ -267,6 +454,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     app = create_app(args.db_path)
+    app.config["ONLINE_WINDOW_SEC"] = max(10, int(args.online_window_sec))
+    app.config["BROKER_HOST"] = args.broker_host
+    app.config["BROKER_PORT"] = int(args.broker_port)
+    app.config["CA_CERT"] = os.path.abspath(args.ca_cert) if args.ca_cert else ""
+    app.config["CLIENT_CERT"] = os.path.abspath(args.client_cert) if args.client_cert else ""
+    app.config["CLIENT_KEY"] = os.path.abspath(args.client_key) if args.client_key else ""
+    app.config["INSECURE"] = bool(args.insecure)
+    app.config["PING_REQUEST_TOPIC_PREFIX"] = args.ping_request_topic_prefix
+    app.config["PING_RESPONSE_TOPIC_PREFIX"] = args.ping_response_topic_prefix
+    app.config["PING_TIMEOUT_SEC"] = max(0.5, float(args.ping_timeout_sec))
     app.run(host=args.host, port=args.port, debug=args.debug)
 
 

@@ -8,6 +8,7 @@ import time
 import uuid
 from datetime import datetime
 from typing import Optional, Tuple
+import json
 
 import cv2
 import numpy as np
@@ -176,6 +177,7 @@ class EdgePublisherApp:
         if reason_code == 0:
             self.connected = True
             print("[EDGE] Connected to MQTT broker.")
+            client.subscribe(f"{self.args.ping_request_topic_prefix.rstrip('/')}/{self.args.device_id}", qos=1)
         else:
             self.connected = False
             print(f"[EDGE] MQTT connection failed: reason_code={reason_code}")
@@ -183,6 +185,29 @@ class EdgePublisherApp:
     def on_disconnect(self, client, _userdata, _flags, reason_code, _properties) -> None:
         self.connected = False
         print(f"[EDGE] Disconnected from MQTT broker: reason_code={reason_code}")
+
+    def on_message(self, client, _userdata, msg: mqtt.MQTTMessage) -> None:
+        expected_topic = f"{self.args.ping_request_topic_prefix.rstrip('/')}/{self.args.device_id}"
+        if msg.topic != expected_topic:
+            return
+
+        request_id = ""
+        sent_utc = ""
+        try:
+            body = json.loads(msg.payload.decode("utf-8", errors="strict"))
+            request_id = str(body.get("request_id") or "")
+            sent_utc = str(body.get("timestamp_utc") or "")
+        except Exception:
+            pass
+
+        pong_topic = f"{self.args.ping_response_topic_prefix.rstrip('/')}/{self.args.device_id}"
+        response = {
+            "device_id": self.args.device_id,
+            "request_id": request_id,
+            "request_timestamp_utc": sent_utc,
+            "response_timestamp_utc": utc_now_iso(),
+        }
+        client.publish(pong_topic, payload=json.dumps(response), qos=1, retain=False)
 
     def build_event_payload(
         self,
@@ -288,6 +313,7 @@ class EdgePublisherApp:
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         client.on_connect = self.on_connect
         client.on_disconnect = self.on_disconnect
+        client.on_message = self.on_message
         client.tls_set(
             ca_certs=self.args.ca_cert,
             certfile=self.args.client_cert,
@@ -386,6 +412,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topic", default="edge/events/v1")
     parser.add_argument("--image-topic-prefix", default="edge/images/v1")
     parser.add_argument("--device-id", default="pi-edge-01")
+    parser.add_argument("--ping-request-topic-prefix", default="edge/ping/request")
+    parser.add_argument("--ping-response-topic-prefix", default="edge/ping/response")
     parser.add_argument("--trigger-mode", choices=["inside_bin", "outside_bin"], default="inside_bin")
 
     parser.add_argument("--ca-cert", required=True)

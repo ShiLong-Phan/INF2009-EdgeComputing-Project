@@ -3,6 +3,7 @@
 {% block content %}
 <section class="cards">
   <article class="card"><h3>Total Events</h3><p>{{ summary.total }}</p></article>
+  <article class="card"><h3>Devices Active Now</h3><p>{{ presence.online }}</p></article>
   <article class="card"><h3>Verified OK</h3><p>{{ summary.verified_ok }}</p></article>
   <article class="card"><h3>Pending</h3><p>{{ summary.verify_pending }}</p></article>
   <article class="card"><h3>Skipped</h3><p>{{ summary.verify_skipped }}</p></article>
@@ -21,16 +22,35 @@
 
 <section class="panel">
   <h2>Device Leaderboard</h2>
+  <p class="hint">Active now means the device sent at least one event within the last {{ online_window_sec }}s.</p>
   <table>
     <thead>
-      <tr><th>#</th><th>Device</th><th>Events</th><th>View</th></tr>
+      <tr><th>#</th><th>Device</th><th>Activity</th><th>Last Seen</th><th>Events</th><th>Ping</th><th>View</th></tr>
     </thead>
     <tbody>
       {% for item in devices %}
       <tr>
         <td>{{ loop.index }}</td>
         <td>{{ item.device_id }}</td>
+        <td>
+          {% if item.status == 'online' %}
+            <span class="status-pill status-online">ACTIVE</span>
+          {% else %}
+            <span class="hint">-</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if item.seconds_since_last_seen is not none %}
+            {{ item.seconds_since_last_seen }}s ago
+          {% else %}
+            -
+          {% endif %}
+        </td>
         <td>{{ item.count }}</td>
+        <td>
+          <button type="button" class="ping-btn" onclick="pingDevice('{{ item.device_id }}', this)">Ping</button>
+          <span class="ping-result" aria-live="polite"></span>
+        </td>
         <td><a href="{{ url_for('dashboard_device', device_id=item.device_id) }}">Open</a></td>
       </tr>
       {% endfor %}
@@ -73,4 +93,33 @@
     </tbody>
   </table>
 </section>
+
+<script>
+  async function pingDevice(deviceId, button) {
+    const resultEl = button.nextElementSibling;
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = "Pinging...";
+    resultEl.textContent = "";
+    resultEl.className = "ping-result";
+
+    try {
+      const response = await fetch(`/api/ping/${encodeURIComponent(deviceId)}`, { method: "POST" });
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        resultEl.textContent = `Alive (${payload.latency_ms} ms)`;
+        resultEl.classList.add("ping-ok");
+      } else {
+        resultEl.textContent = `No response (${payload.error || "error"})`;
+        resultEl.classList.add("ping-fail");
+      }
+    } catch (_err) {
+      resultEl.textContent = "Ping failed";
+      resultEl.classList.add("ping-fail");
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+</script>
 {% endblock %}
