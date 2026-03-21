@@ -117,7 +117,7 @@ Scope:
 Exit criteria:
 - Stable publish/consume over MQTTS for at least 1000 test messages.
 
-### CP2 - Event Schema and Reliability
+### CP2 - Event Schema and Reliability (IMPLEMENTED IN CODE)
 
 Scope:
 - Implement JSON event envelope.
@@ -127,7 +127,7 @@ Scope:
 Exit criteria:
 - Intentional duplicate messages create one logical DB record.
 
-### CP3 - Sensor Trigger Pipeline
+### CP3 - Sensor Trigger Pipeline (IMPLEMENTED IN CODE)
 
 Scope:
 - Convert mmWave detection into event creation.
@@ -136,7 +136,7 @@ Scope:
 Exit criteria:
 - Trigger behavior is predictable in both mounting modes.
 
-### CP4 - Capture + Local Inference Baseline
+### CP4 - Capture + Local Inference Baseline (IMPLEMENTED IN CODE)
 
 Scope:
 - Capture image on motion trigger.
@@ -203,3 +203,30 @@ Exit criteria:
 2) Required evaluation dataset size for claiming 80 percent accuracy.
 3) How many events must be collected for baseline report.
 4) Whether Gemini can be treated as reference label in assessment reports.
+
+## Implementation Artifacts (CP2-CP4)
+
+Implemented files:
+
+1) cp2_cp4/event_schema.py
+- Shared schema encode/decode and payload validation.
+
+2) cp2_cp4/edge_event_publisher_pi.py
+- mmWave trigger profiles (inside_bin, outside_bin).
+- Camera capture on trigger.
+- Local inference and recyclable keyword check.
+- Optional affirmative sound playback.
+- MQTT publish with QoS 1 and optional duplicate publish mode.
+
+3) cp2_cp4/server_event_receiver_laptop.py
+- TLS MQTT receiver.
+- Schema validation.
+- SQLite idempotent upsert keyed by event_id.
+- Duplicate accounting through receive_count.
+
+4) cp2_cp4/requirements-pi.txt
+5) cp2_cp4/requirements-laptop.txt
+
+Operational guide:
+
+- Use CP2_TO_CP4_SETUP.md for setup commands, runtime commands, dedup test flow, and manual hardware/network steps required on laptop and Pi.
