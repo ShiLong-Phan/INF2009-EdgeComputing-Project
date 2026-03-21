@@ -4,14 +4,14 @@
 
 Build an edge-assisted recyclable classifier with two stages:
 1) Edge device gives fast local prediction and immediate feedback.
-2) Edge server performs mandatory cloud verification (Gemini API) and stores final result.
+2) Edge server performs mandatory cloud verification (NanoGPT/Qwen API) and stores final result.
 
 The first release should prioritize a stable baseline and data collection. Improvements should be added only after baseline metrics are collected.
 
 ## Confirmed Decisions
 
 1) MQTT broker and edge server run on laptop (local network).
-2) Gemini verification is mandatory for all events.
+2) Cloud verification is mandatory for all events.
 3) Image storage is optional and should support cleanup from dashboard command.
 4) Target edge model accuracy is around 80 percent (initial baseline target).
 5) Latency target of sub-100ms is aspirational for edge-only stage; full pipeline latency with cloud verification will likely be higher.
@@ -174,13 +174,40 @@ Exit criteria:
 - Dashboard provides enough information for demo and debugging.
 
 ### CP8 - ML/AI features
-From notes:
-Focus on AI and Machine Learning (ML) Analytics (Emphasis on Edge Analytics):
-• The project should focus on performing analytics at the edge, which involves processing data near its source rather than in 
-a centralised data-processing warehouse.
-• This approach should be practical and applicable in real-world scenarios.
-• Encourage the use of sophisticated ML techniques that are suited for edge devices for data analysis and interpretation.
-Maybe linear regression for predicting how categories will increase? Have no idea but we have the datetime for each entry.
+Scope:
+Build an analytics page and dataset export flow that answers: "What are users trying to recycle, and where are they uncertain?"
+
+Core analytics deliverables:
+1) Global spread of scanned materials:
+	- Count and percentage by normalized class (BOTTLE, CAN, UNKNOWN, OTHER).
+	- UNKNOWN and OTHER are treated as non-recyclable/uncertain campaign targets.
+2) Per-device behavior profile:
+	- Top scanned labels per device.
+	- Unknown-rate per device = unknown_or_other_scans / total_scans.
+3) Verification quality analytics:
+	- Agreement rate by device and globally.
+	- Mismatch distribution (edge says bottle, cloud says can, etc.).
+4) Time-window insights:
+	- Daily and hourly scan volume trends.
+	- Daily unknown-rate trend to detect confusion periods.
+5) Campaign recommendation view (rule-based for MVP):
+	- If unknown-rate for a device/time-window exceeds threshold, flag campaign focus.
+	- Example recommendation: "Increase bottle-vs-can signage near Device pi-edge-02."
+
+Suggested CP8 dashboard pages:
+1) Data page (global): spread charts + latest 7-day trends.
+2) Device analytics page: per-device material mix and unknown-rate trend.
+3) Campaign insights page: ranked recommended interventions.
+
+Practical ML progression (post-MVP):
+1) Baseline forecasting with simple time-series/linear trend on daily counts.
+2) Confidence calibration of edge model using cloud-confirmed labels.
+3) Drift watch: detect sudden class distribution changes by device.
+
+Exit criteria:
+1) Dashboard includes a dedicated "Data" analytics page.
+2) Export CSV endpoint exists for report generation.
+3) At least one actionable campaign recommendation is generated from real data.
 
 ### CP9 - Edge Image Retention Controls (Optional but Plausible)
 
@@ -237,10 +264,10 @@ Implemented files:
 - SQLite idempotent upsert keyed by event_id.
 - Duplicate accounting through receive_count.
 - Image topic ingestion and local image persistence on laptop.
-- CP6 Gemini verification and verification status/result persistence.
+- CP6 cloud verification and verification status/result persistence.
 
-5) cp2_cp6/gemini_verifier.py
-- Gemini image classification helper adapted for laptop-side verification.
+5) cp2_cp6/nanogpt_verifier.py
+- NanoGPT/Qwen image classification helper adapted for laptop-side verification.
 
 6) cp2_cp6/requirements-pi.txt
 7) cp2_cp6/requirements-laptop.txt
@@ -248,3 +275,11 @@ Implemented files:
 Operational guide:
 
 - Use CP2_TO_CP4_SETUP.md for setup commands, CP5/CP6 runtime commands, dedup test flow, image transport flow, and manual hardware/network steps required on laptop and Pi.
+- Use CP7_DEMO_2PI_RUNBOOK.md for end-to-end demo commands (broker, receiver, dashboard, and two Pi clients).
+
+## Reporting and Analytics Deliverables
+
+For supervisor-facing demos and reports:
+1) Include a "Data" page showing spread of recyclables/non-recyclables over a selectable time window.
+2) Include per-device unknown-rate and mismatch-rate to identify confusion hotspots.
+3) Export CSV snapshots from the local DB for campaign planning evidence.
