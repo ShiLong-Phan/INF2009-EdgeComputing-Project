@@ -220,6 +220,7 @@ class EdgePublisherApp:
 
         ser = serial.Serial(self.args.mmwave_port, self.args.mmwave_baud, timeout=0.1)
         cap = cv2.VideoCapture(self.args.camera_id)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.args.frame_width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.args.frame_height)
 
@@ -245,7 +246,12 @@ class EdgePublisherApp:
         print("[EDGE] CP2-CP4 pipeline running. Press Ctrl+C to stop.")
 
         try:
+            latest_camera_frame = None
             while True:
+                ret, camera_frame = cap.read()
+                if ret:
+                    latest_camera_frame = camera_frame
+
                 latest = None
                 while True:
                     frame = self.read_mmwave_frame(ser)
@@ -268,11 +274,12 @@ class EdgePublisherApp:
                     if is_rising_edge and (now - self.last_trigger_monotonic) >= self.args.debounce_sec:
                         self.last_trigger_monotonic = now
 
-                        ret, image = cap.read()
-                        if not ret:
+                        if latest_camera_frame is None:
                             print("[EDGE] Camera frame capture failed. Skipping trigger.")
                             self.motion_state = True
                             continue
+
+                        image = latest_camera_frame.copy()
 
                         file_name = f"trigger_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
                         image_path = os.path.join(self.args.capture_dir, file_name)
