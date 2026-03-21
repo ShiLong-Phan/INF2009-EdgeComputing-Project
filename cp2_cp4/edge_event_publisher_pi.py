@@ -17,6 +17,7 @@ import serial
 from event_schema import SUPPORTED_PAYLOAD_VERSION, encode_payload, utc_now_iso
 
 FRAME_HEADER = bytes([0xAA, 0xFF, 0x03, 0x00])
+FRAME_TAIL = bytes([0x55, 0xCC])
 FRAME_SIZE = 30
 MAX_TARGETS = 3
 
@@ -52,7 +53,7 @@ class EdgePublisherApp:
         return -magnitude if (raw & 0x8000) else magnitude
 
     def parse_mmwave_frame(self, frame: bytes) -> Tuple[bool, Optional[float], Optional[int]]:
-        if len(frame) != FRAME_SIZE or frame[:4] != FRAME_HEADER:
+        if len(frame) != FRAME_SIZE or frame[:4] != FRAME_HEADER or frame[-2:] != FRAME_TAIL:
             return False, None, None
 
         cfg = TRIGGER_PROFILES[self.args.trigger_mode]
@@ -228,37 +229,46 @@ class EdgePublisherApp:
                     latest = frame
 
                 if latest is None:
-                    time.sleep(0.02)
-                    continue
+                    is_now_active = self.motion_state
+                    distance_cm = None
+                    speed_cm_s = None
+                else:
+                    is_now_active, distance_cm, speed_cm_s = self.parse_mmwave_frame(latest)
 
-                active, distance_cm, speed_cm_s = self.parse_mmwave_frame(latest)
                 now = time.monotonic()
 
-                if active and (now - self.last_trigger_monotonic) >= self.args.debounce_sec:
-                    self.last_trigger_monotonic = now
+                if is_now_active:
+                    is_rising_edge = not self.motion_state
 
-                    ret, image = cap.read()
-                    if not ret:
-                        print("[EDGE] Camera frame capture failed. Skipping trigger.")
-                        continue
+                    if is_rising_edge and (now - self.last_trigger_monotonic) >= self.args.debounce_sec:
+                        self.last_trigger_monotonic = now
 
-                    file_name = f"trigger_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
-                    image_path = os.path.join(self.args.capture_dir, file_name)
-                    cv2.imwrite(image_path, image)
+                        ret, image = cap.read()
+                        if not ret:
+                            print("[EDGE] Camera frame capture failed. Skipping trigger.")
+                            self.motion_state = True
+                            continue
 
-                    label, confidence = self.run_inference(image)
-                    if self.is_recyclable(label):
-                        self.play_affirmative_sound()
+                        file_name = f"trigger_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
+                        image_path = os.path.join(self.args.capture_dir, file_name)
+                        cv2.imwrite(image_path, image)
 
-                    payload = self.build_event_payload(
-                        image_ref=file_name,
-                        label=label,
-                        confidence=confidence,
-                        distance_cm=distance_cm,
-                        speed_cm_s=speed_cm_s,
-                    )
-                    self.publish_event(client, payload)
+                        label, confidence = self.run_inference(image)
+                        if self.is_recyclable(label):
+                            self.play_affirmative_sound()
+
+                        payload = self.build_event_payload(
+                            image_ref=file_name,
+                            label=label,
+                            confidence=confidence,
+                            distance_cm=distance_cm,
+                            speed_cm_s=speed_cm_s,
+                        )
+                        self.publish_event(client, payload)
+
+                    self.motion_state = True
                 else:
+                    self.motion_state = False
                     time.sleep(0.02)
         except KeyboardInterrupt:
             print("\n[EDGE] Stopped by user.")
