@@ -145,7 +145,7 @@ python3 cp2_cp6/edge_event_publisher_pi.py \
   --label-path labels.txt \
   --edge-model-version mobilenetv2-baseline \
    --capture-dir captures \
-   --sound-file /home/pi/sounds/beep.wav \
+   --sound-file /home/domaniac/Desktop/skool_projekt/INF2009-EdgeComputing-Project/sounds/beep.wav \
    --sound-device plughw:3,0 \
    --min-speed-cm-s 65 \
    --outbox-db-path data/pi_outbox.db \
