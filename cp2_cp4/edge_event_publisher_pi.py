@@ -161,7 +161,11 @@ class EdgePublisherApp:
             return
 
         if shutil.which("aplay"):
-            subprocess.run(["aplay", self.args.sound_file], check=False)
+            cmd = ["aplay"]
+            if self.args.sound_device:
+                cmd.extend(["-D", self.args.sound_device])
+            cmd.append(self.args.sound_file)
+            subprocess.run(cmd, check=False)
             return
 
         print("[EDGE] 'aplay' not found. Skipping sound playback.")
@@ -339,6 +343,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--recyclable-keywords", default="bottle,can,plastic,aluminum,tin")
     parser.add_argument("--sound-file", default="")
+    parser.add_argument(
+        "--sound-device",
+        default="",
+        help="Optional ALSA device for aplay, e.g. plughw:3,0. Leave empty to use system default.",
+    )
 
     parser.add_argument(
         "--publish-duplicate",
