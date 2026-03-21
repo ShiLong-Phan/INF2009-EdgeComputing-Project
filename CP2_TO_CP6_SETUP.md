@@ -5,7 +5,7 @@ This document covers the implementation that was added in this repository for:
 - CP3 Sensor trigger pipeline
 - CP4 Capture + local inference baseline
 - CP5 Offline FIFO outbox queue on Pi
-- CP6 Laptop-side Gemini verification
+- CP6 Laptop-side cloud verification (NanoGPT + Qwen)
 
 ## Added Files
 
@@ -87,14 +87,14 @@ Implemented in edge_event_publisher_pi.py + pi_outbox.py:
 
 ## CP6 Coverage
 
-Implemented in server_event_receiver_laptop.py + gemini_verifier.py:
+Implemented in server_event_receiver_laptop.py + nanogpt_verifier.py:
 1. Laptop subscribes to two topic streams:
    - metadata topic: edge/events/v1
    - image topic prefix: edge/images/v1/#
 2. Image transfer from Pi to laptop is binary MQTT payload (JPEG bytes).
 3. Image bytes are stored as files on laptop under data/images/<event_id>.jpg.
 4. SQLite stores image metadata/path/status (not raw image bytes).
-5. Gemini verification runs on laptop when both metadata and image are present.
+5. Cloud verification runs on laptop when both metadata and image are present.
 6. Verification writes:
    - verify_status
    - verify_label
@@ -128,7 +128,12 @@ set NANOGPT_API_KEY=your_actual_key_here
 2. Run receiver (now using Qwen via NanoGPT):
 
 ```powershell
-python cp2_cp6\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db --image-store-dir .\data\images --nanogpt-model qwen3.5-27b-vision
+python cp2_cp6\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db --image-store-dir .\data\images --nanogpt-model qwen3.5-27b
+```
+
+## Pi Commands (Edge Runtime)
+
+Run on your actual Pi after pulling this repo.
 
 ```bash
 python3 cp2_cp6/edge_event_publisher_pi.py \
@@ -188,6 +193,27 @@ Because this coding workspace is not your real laptop/Pi runtime, do these manua
 
 ## Known Limits Of Current CP2-CP6 Implementation
 
-1. CP7 dashboard is not included yet.
+1. CP7 dashboard is provided separately in cp2_cp6/dashboard_cp7.py.
 2. Receiver assumes image payload fits within MQTT broker/message limits.
 3. Inference mapping to recyclable classes depends on your label file and keyword matching.
+
+## CP7 Dashboard (Flask + Jinja2)
+
+This MVP supports multiple edge devices from one SQLite database.
+
+Features:
+1. Landing page with global KPIs and latest requests.
+2. Device leaderboard and per-device drilldown pages.
+3. Per-device scanned material mix as a numbered list and bar chart.
+4. UNKNOWN is intentionally categorized as Non-Recyclable for campaign planning.
+
+Install and run on laptop:
+
+```powershell
+pip install -r cp2_cp6\requirements-laptop.txt
+python cp2_cp6\dashboard_cp7.py --db-path .\data\edge_events.db --host 0.0.0.0 --port 5050
+```
+
+Open browser:
+1. http://localhost:5050/
+2. Click any device row to open its detail page.

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% set title = "CP7 Global Overview" %}
+{% block content %}
+<section class="cards">
+  <article class="card"><h3>Total Events</h3><p>{{ summary.total }}</p></article>
+  <article class="card"><h3>Verified OK</h3><p>{{ summary.verified_ok }}</p></article>
+  <article class="card"><h3>Pending</h3><p>{{ summary.verify_pending }}</p></article>
+  <article class="card"><h3>Skipped</h3><p>{{ summary.verify_skipped }}</p></article>
+  <article class="card"><h3>Errors</h3><p>{{ summary.verify_error }}</p></article>
+  <article class="card">
+    <h3>Agreement Rate</h3>
+    <p>
+      {% if summary.agreement_rate is not none %}
+        {{ summary.agreement_rate }}% (n={{ summary.agreement_samples }})
+      {% else %}
+        N/A
+      {% endif %}
+    </p>
+  </article>
+</section>
+
+<section class="panel">
+  <h2>Device Leaderboard</h2>
+  <table>
+    <thead>
+      <tr><th>#</th><th>Device</th><th>Events</th><th>View</th></tr>
+    </thead>
+    <tbody>
+      {% for item in devices %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ item.device_id }}</td>
+        <td>{{ item.count }}</td>
+        <td><a href="{{ url_for('dashboard_device', device_id=item.device_id) }}">Open</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>Latest Requests</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Time (UTC)</th>
+        <th>Device</th>
+        <th>Edge Label</th>
+        <th>Cloud Label</th>
+        <th>Verify Status</th>
+        <th>Image</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in latest %}
+      <tr>
+        <td>{{ row.timestamp_utc }}</td>
+        <td>{{ row.device_id }}</td>
+        <td>{{ row.edge_pred_label }}</td>
+        <td>{{ row.verify_label or "-" }}</td>
+        <td>{{ row.verify_status }}</td>
+        <td>
+          {% if row.image_path %}
+            <a href="{{ url_for('view_image', event_id=row.event_id) }}" target="_blank">View</a>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

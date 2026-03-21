@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% set title = "Device Detail" %}
+{% block content %}
+<section class="panel">
+  <h2>Device Detail: {{ device_id }}</h2>
+  <p>This page tracks scan behavior for targeted recycling campaigns.</p>
+</section>
+
+<section class="cards">
+  <article class="card"><h3>Total Events</h3><p>{{ summary.total }}</p></article>
+  <article class="card"><h3>Verified OK</h3><p>{{ summary.verified_ok }}</p></article>
+  <article class="card"><h3>Pending</h3><p>{{ summary.verify_pending }}</p></article>
+  <article class="card"><h3>Skipped</h3><p>{{ summary.verify_skipped }}</p></article>
+  <article class="card"><h3>Errors</h3><p>{{ summary.verify_error }}</p></article>
+</section>
+
+<section class="grid-two">
+  <article class="panel">
+    <h3>Scanned Material Mix (Numbered)</h3>
+    <ol>
+      {% for item in mix %}
+      <li>
+        {{ item.label }} - {{ item.count }} scans
+        <span class="tag {{ 'tag-green' if item.category == 'Recyclable' else 'tag-red' }}">{{ item.category }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+    <p class="hint">UNKNOWN is intentionally grouped as Non-Recyclable for campaign planning.</p>
+  </article>
+
+  <article class="panel">
+    <h3>Scanned Material Mix (Bar Chart)</h3>
+    <canvas id="scanMixChart" height="220"></canvas>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>Latest Requests for {{ device_id }}</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Time (UTC)</th>
+        <th>Edge Label</th>
+        <th>Edge Conf</th>
+        <th>Verify Status</th>
+        <th>Cloud Label</th>
+        <th>Image</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in latest %}
+      <tr>
+        <td>{{ row.timestamp_utc }}</td>
+        <td>{{ row.edge_pred_label }}</td>
+        <td>{{ '%.3f'|format(row.edge_confidence or 0.0) }}</td>
+        <td>{{ row.verify_status }}</td>
+        <td>{{ row.verify_label or '-' }}</td>
+        <td>
+          {% if row.image_path %}
+            <a href="{{ url_for('view_image', event_id=row.event_id) }}" target="_blank">View</a>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<script>
+  const labels = {{ chart_labels|safe }};
+  const data = {{ chart_counts|safe }};
+  const background = labels.map(lbl => (lbl === "BOTTLE" || lbl === "CAN") ? "#1f8a4d" : "#c0392b");
+
+  new Chart(document.getElementById("scanMixChart"), {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Scans",
+        data: data,
+        backgroundColor: background,
+        borderRadius: 8
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+</script>
+{% endblock %}

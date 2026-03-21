@@ -1,0 +1,93 @@
+:root {
+  --bg: #f4efe6;
+  --panel: #fffdf8;
+  --ink: #212121;
+  --brand: #0f6c5a;
+  --accent: #e6b800;
+  --line: #ddd3c4;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(circle at top right, #fff6dd, var(--bg));
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(120deg, #f6f2e9, #fffaf0);
+}
+.topbar h1 { margin: 0; font-size: 1.4rem; }
+.topbar p { margin: 4px 0 0; color: #6e6658; }
+.topbar a { color: var(--brand); text-decoration: none; font-weight: 600; }
+
+.container {
+  max-width: 1200px;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+}
+.card h3 { margin: 0; font-size: 0.9rem; color: #5b5448; }
+.card p { margin: 8px 0 0; font-size: 1.25rem; font-weight: 700; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 18px;
+}
+
+.grid-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .grid-two { grid-template-columns: 1fr; }
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  padding: 8px;
+  font-size: 0.92rem;
+}
+
+ol { margin: 0; padding-left: 20px; }
+li { margin: 8px 0; }
+.hint { color: #666055; font-size: 0.9rem; }
+
+.tag {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 99px;
+  padding: 2px 8px;
+}
+.tag-green { background: #ddf5e5; color: #136a35; }
+.tag-red { background: #fde5e1; color: #8b1f13; }
