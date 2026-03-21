@@ -227,17 +227,17 @@ class ReceiverApp:
         if not image_path or not os.path.exists(image_path):
             return
 
-        if not self.args.nanogpt_api_key:
+        if not self.args.nanogpt_api_key or self.args.nanogpt_api_key.strip() == "":
             mark_verify_result(
                 self.args.db_path,
                 event_id,
-                "error",
+                "skipped",
+                "UNVERIFIED",
                 None,
-                None,
-                "NANOGPT_API_KEY not set",
-                None,
+                "No API key provided",
+                "STUB_RESPONSE",
             )
-            print(f"[SRV] Verify error event_id={event_id} missing NANOGPT_API_KEY")
+            print(f"[SRV] Verification skipped for event_id={event_id} (No API key)")
             return
 
         try:
