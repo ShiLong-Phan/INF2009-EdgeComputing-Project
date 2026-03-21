@@ -146,7 +146,7 @@ Scope:
 Exit criteria:
 - End-to-end local edge loop works repeatedly without crash.
 
-### CP5 - Offline Outbox Queue
+### CP5 - Offline Outbox Queue (IMPLEMENTED IN CODE)
 
 Scope:
 - Persist unsent events locally.
@@ -155,7 +155,7 @@ Scope:
 Exit criteria:
 - No data loss after forced disconnection and reconnect test.
 
-### CP6 - Mandatory Gemini Verification
+### CP6 - Mandatory Gemini Verification (IMPLEMENTED IN CODE)
 
 Scope:
 - Server receives event, calls Gemini API for verification.
@@ -204,7 +204,7 @@ Exit criteria:
 3) How many events must be collected for baseline report.
 4) Whether Gemini can be treated as reference label in assessment reports.
 
-## Implementation Artifacts (CP2-CP4)
+## Implementation Artifacts (CP2-CP6)
 
 Implemented files:
 
@@ -216,17 +216,26 @@ Implemented files:
 - Camera capture on trigger.
 - Local inference and recyclable keyword check.
 - Optional affirmative sound playback.
-- MQTT publish with QoS 1 and optional duplicate publish mode.
+- MQTT publish with QoS 1, dual topics (event + image), and optional duplicate publish mode.
+- CP5 integration with FIFO SQLite outbox, retries, and backoff.
 
-3) cp2_cp4/server_event_receiver_laptop.py
+3) cp2_cp4/pi_outbox.py
+- Pi-side FIFO SQLite queue for event/image delivery tracking.
+
+4) cp2_cp4/server_event_receiver_laptop.py
 - TLS MQTT receiver.
 - Schema validation.
 - SQLite idempotent upsert keyed by event_id.
 - Duplicate accounting through receive_count.
+- Image topic ingestion and local image persistence on laptop.
+- CP6 Gemini verification and verification status/result persistence.
 
-4) cp2_cp4/requirements-pi.txt
-5) cp2_cp4/requirements-laptop.txt
+5) cp2_cp4/gemini_verifier.py
+- Gemini image classification helper adapted for laptop-side verification.
+
+6) cp2_cp4/requirements-pi.txt
+7) cp2_cp4/requirements-laptop.txt
 
 Operational guide:
 
-- Use CP2_TO_CP4_SETUP.md for setup commands, runtime commands, dedup test flow, and manual hardware/network steps required on laptop and Pi.
+- Use CP2_TO_CP4_SETUP.md for setup commands, CP5/CP6 runtime commands, dedup test flow, image transport flow, and manual hardware/network steps required on laptop and Pi.

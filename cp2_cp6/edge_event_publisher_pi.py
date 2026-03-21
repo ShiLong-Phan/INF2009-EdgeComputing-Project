@@ -15,6 +15,7 @@ import paho.mqtt.client as mqtt
 import serial
 
 from event_schema import SUPPORTED_PAYLOAD_VERSION, encode_payload, utc_now_iso
+from pi_outbox import PiOutbox
 
 FRAME_HEADER = bytes([0xAA, 0xFF, 0x03, 0x00])
 FRAME_TAIL = bytes([0x55, 0xCC])
@@ -42,6 +43,7 @@ class EdgePublisherApp:
         self.net = None
         self.labels = []
         self.connected = False
+        self.outbox = PiOutbox(self.args.outbox_db_path)
 
         os.makedirs(self.args.capture_dir, exist_ok=True)
 
@@ -204,16 +206,72 @@ class EdgePublisherApp:
             "mmwave_speed_cm_s": speed_cm_s,
         }
 
-    def publish_event(self, client: mqtt.Client, payload: dict) -> None:
-        payload_text = encode_payload(payload)
+    def _wait_publish(self, info) -> None:
+        info.wait_for_publish(timeout=self.args.publish_timeout_sec)
+        if not info.is_published():
+            raise RuntimeError("publish timed out before PUBACK")
+
+    def _publish_event_payload_text(self, client: mqtt.Client, event_id: str, payload_text: str) -> None:
         result = client.publish(self.args.topic, payload=payload_text, qos=1, retain=False)
-        print(
-            f"[EDGE] Published event_id={payload['event_id']} mid={result.mid} label={payload['edge_pred_label']} conf={payload['edge_confidence']}"
-        )
+        self._wait_publish(result)
+        print(f"[EDGE] Published event metadata event_id={event_id} mid={result.mid}")
 
         if self.args.publish_duplicate:
             dup_result = client.publish(self.args.topic, payload=payload_text, qos=1, retain=False)
-            print(f"[EDGE] Published duplicate for testing mid={dup_result.mid}")
+            self._wait_publish(dup_result)
+            print(f"[EDGE] Published duplicate metadata event_id={event_id} mid={dup_result.mid}")
+
+    def _publish_event_image(self, client: mqtt.Client, event_id: str, image_path: str) -> None:
+        if not os.path.exists(image_path):
+            raise RuntimeError(f"queued image not found: {image_path}")
+
+        with open(image_path, "rb") as image_file:
+            image_bytes = image_file.read()
+
+        if len(image_bytes) > self.args.max_image_bytes:
+            raise RuntimeError(
+                f"image too large ({len(image_bytes)} bytes), max allowed is {self.args.max_image_bytes}"
+            )
+
+        image_topic = f"{self.args.image_topic_prefix}/{event_id}"
+        result = client.publish(image_topic, payload=image_bytes, qos=1, retain=False)
+        self._wait_publish(result)
+        print(f"[EDGE] Published event image event_id={event_id} bytes={len(image_bytes)} mid={result.mid}")
+
+        if self.args.publish_duplicate:
+            dup_result = client.publish(image_topic, payload=image_bytes, qos=1, retain=False)
+            self._wait_publish(dup_result)
+            print(f"[EDGE] Published duplicate image event_id={event_id} mid={dup_result.mid}")
+
+    def drain_outbox(self, client: mqtt.Client) -> None:
+        if not self.connected:
+            return
+
+        item = self.outbox.peek_ready()
+        if item is None:
+            return
+
+        try:
+            if not item.event_published:
+                self._publish_event_payload_text(client, item.event_id, item.event_payload)
+                self.outbox.mark_event_published(item.id)
+
+            if not item.image_published:
+                self._publish_event_image(client, item.event_id, item.image_path)
+                self.outbox.mark_image_published(item.id)
+
+            self.outbox.complete(item.id)
+            if self.args.delete_image_after_send and os.path.exists(item.image_path):
+                os.remove(item.image_path)
+            print(f"[EDGE] Outbox delivered event_id={item.event_id} pending={self.outbox.count_pending()}")
+        except Exception as ex:
+            retry_count = item.retry_count + 1
+            delay_sec = min(self.args.max_retry_backoff_sec, self.args.retry_base_sec * (2 ** max(0, retry_count - 1)))
+            next_retry_ts = time.time() + float(delay_sec)
+            self.outbox.defer_retry(item.id, retry_count, next_retry_ts, str(ex))
+            print(
+                f"[EDGE] Outbox retry scheduled event_id={item.event_id} retry={retry_count} delay_sec={delay_sec} error={ex}"
+            )
 
     def run(self) -> None:
         self.try_load_model()
@@ -296,12 +354,18 @@ class EdgePublisherApp:
                             distance_cm=distance_cm,
                             speed_cm_s=speed_cm_s,
                         )
-                        self.publish_event(client, payload)
+                        payload_text = encode_payload(payload)
+                        self.outbox.enqueue(payload["event_id"], payload_text, image_path)
+                        print(
+                            f"[EDGE] Queued event_id={payload['event_id']} label={payload['edge_pred_label']} conf={payload['edge_confidence']} pending={self.outbox.count_pending()}"
+                        )
 
                     self.motion_state = True
                 else:
                     self.motion_state = False
                     time.sleep(0.02)
+
+                self.drain_outbox(client)
         except KeyboardInterrupt:
             print("\n[EDGE] Stopped by user.")
         finally:
@@ -316,6 +380,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--broker-host", required=True)
     parser.add_argument("--broker-port", type=int, default=8883)
     parser.add_argument("--topic", default="edge/events/v1")
+    parser.add_argument("--image-topic-prefix", default="edge/images/v1")
     parser.add_argument("--device-id", default="pi-edge-01")
     parser.add_argument("--trigger-mode", choices=["inside_bin", "outside_bin"], default="inside_bin")
 
@@ -361,6 +426,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Publish each event twice to validate server-side deduplication",
     )
+    parser.add_argument("--outbox-db-path", default="data/pi_outbox.db")
+    parser.add_argument("--retry-base-sec", type=float, default=2.0)
+    parser.add_argument("--max-retry-backoff-sec", type=float, default=60.0)
+    parser.add_argument("--publish-timeout-sec", type=float, default=5.0)
+    parser.add_argument("--max-image-bytes", type=int, default=400000)
+    parser.add_argument("--delete-image-after-send", action="store_true")
 
     return parser
 

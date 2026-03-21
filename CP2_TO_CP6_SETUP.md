@@ -1,16 +1,19 @@
-# CP2 to CP4 Setup and Runbook
+# CP2 to CP6 Setup and Runbook
 
 This document covers the implementation that was added in this repository for:
 - CP2 Event schema and reliability baseline (QoS1 + server dedup)
 - CP3 Sensor trigger pipeline
 - CP4 Capture + local inference baseline
-- Note: I will be using same .venv-laptop from CP1
+- CP5 Offline FIFO outbox queue on Pi
+- CP6 Laptop-side Gemini verification
 
 ## Added Files
 
 - cp2_cp4/event_schema.py
 - cp2_cp4/edge_event_publisher_pi.py
+- cp2_cp4/pi_outbox.py
 - cp2_cp4/server_event_receiver_laptop.py
+- cp2_cp4/gemini_verifier.py
 - cp2_cp4/requirements-pi.txt
 - cp2_cp4/requirements-laptop.txt
 
@@ -66,6 +69,39 @@ Notes:
 1. If model or labels are missing, script runs in capture-only prediction mode (label=unknown, confidence=0.0).
 2. This still preserves CP2 data contract and pipeline behavior.
 
+## CP5 Coverage
+
+Implemented in edge_event_publisher_pi.py + pi_outbox.py:
+1. Pi outbox uses SQLite with FIFO ordering by autoincrement id.
+2. Each queue row contains:
+   - event payload JSON
+   - image file path
+   - event/image publish status
+   - retry count and next retry timestamp
+3. Publish flow is exactly-once-ish at application level:
+   - publish event metadata (QoS1)
+   - publish image bytes (QoS1) to image topic
+   - remove row only after both publish operations succeed
+4. Retries use exponential backoff:
+   - delay = retry_base_sec * 2^(retry_count-1), capped by max_retry_backoff_sec
+
+## CP6 Coverage
+
+Implemented in server_event_receiver_laptop.py + gemini_verifier.py:
+1. Laptop subscribes to two topic streams:
+   - metadata topic: edge/events/v1
+   - image topic prefix: edge/images/v1/#
+2. Image transfer from Pi to laptop is binary MQTT payload (JPEG bytes).
+3. Image bytes are stored as files on laptop under data/images/<event_id>.jpg.
+4. SQLite stores image metadata/path/status (not raw image bytes).
+5. Gemini verification runs on laptop when both metadata and image are present.
+6. Verification writes:
+   - verify_status
+   - verify_label
+   - verify_confidence (None for categorical response)
+   - verify_error
+   - verify_raw_text
+
 ## Laptop Commands (Receiver)
 
 Run on your actual laptop after pulling this repo.
@@ -79,10 +115,16 @@ pip install --upgrade pip
 pip install -r cp2_cp4\requirements-laptop.txt
 ```
 
+Set Gemini API key in the same shell before running receiver:
+
+```powershell
+$env:GEMINI_API_KEY = "<YOUR_API_KEY>"
+```
+
 2. Run receiver:
 
 ```powershell
-python cp2_cp4\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db
+python cp2_cp4\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db --image-store-dir .\data\images --gemini-model gemini-2.5-flash
 ```
 
 ## Pi Commands (Edge Runtime)
@@ -105,6 +147,7 @@ python3 cp2_cp4/edge_event_publisher_pi.py \
   --broker-host DOMCOM2 \
   --broker-port 8883 \
   --topic edge/events/v1 \
+   --image-topic-prefix edge/images/v1 \
   --device-id pi-edge-01 \
   --trigger-mode inside_bin \
   --ca-cert certs/ca.crt \
@@ -114,9 +157,13 @@ python3 cp2_cp4/edge_event_publisher_pi.py \
   --label-path labels.txt \
   --edge-model-version mobilenetv2-baseline \
    --capture-dir captures \
-   --sound-file /home/domaniac/Desktop/skool_projekt/INF2009-EdgeComputing-Project/sounds/beep.wav \
+   --sound-file /home/pi/sounds/beep.wav \
    --sound-device plughw:3,0 \
-   --min-speed-cm-s 65
+   --min-speed-cm-s 65 \
+   --outbox-db-path data/pi_outbox.db \
+   --retry-base-sec 2 \
+   --max-retry-backoff-sec 60 \
+   --max-image-bytes 400000
 ```
 
 3. Optional dedup test:
@@ -124,6 +171,7 @@ python3 cp2_cp4/edge_event_publisher_pi.py \
 ```bash
 python3 cp2_cp4/edge_event_publisher_pi.py \
   --broker-host DOMCOM2 \
+   --image-topic-prefix edge/images/v1 \
   --ca-cert certs/ca.crt \
   --client-cert certs/pi-client.crt \
   --client-key certs/pi-client.key \
@@ -143,14 +191,15 @@ Because this coding workspace is not your real laptop/Pi runtime, do these manua
    - Ensure UART is enabled and mmWave is available at /dev/ttyAMA0 (or pass another --mmwave-port).
    - Ensure USB camera index is correct (--camera-id).
    - Place model and labels on Pi or run capture-only mode.
+   - Ensure captures and outbox DB locations are writable (capture-dir and outbox-db-path).
    - For sound playback, install alsa-utils (aplay) and provide --sound-file.
 
 3. Network/certs:
    - Ensure Pi resolves laptop hostname (DOMCOM2) correctly.
    - If hostname verification fails in changing demo networks, update mapping or regenerate server cert SAN as needed.
 
-## Known Limits Of Current CP2-CP4 Implementation
+## Known Limits Of Current CP2-CP6 Implementation
 
-1. CP5 outbox persistence is not included yet.
-2. CP6 cloud verification and CP7 dashboard are not included yet.
+1. CP7 dashboard is not included yet.
+2. Receiver assumes image payload fits within MQTT broker/message limits.
 3. Inference mapping to recyclable classes depends on your label file and keyword matching.
