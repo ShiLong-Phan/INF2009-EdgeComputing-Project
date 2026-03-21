@@ -220,7 +220,9 @@ class ReceiverApp:
         if candidate is None:
             return
 
-        if candidate["verify_status"] not in ("pending", "error"):
+        # DEDUP: If it's already verified (ok) or skipped, don't call the API again.
+        if candidate["verify_status"] in ("ok", "skipped"):
+            print(f"[SRV] Skipping verification for event_id={event_id} (Already {candidate['verify_status']})")
             return
 
         image_path = candidate["image_path"]
