@@ -6,4 +6,4 @@ python3 cp1_mqtt/mqtt_tls_publisher_pi.py --broker-host 192.168.1.232 --broker-p
 ./scripts/update_broker_hostmap.sh --broker-ip 192.168.1.17 --broker-host DOMCOM2 --broker-port 8883
 
 # Then run CP2-CP4 edge publisher:
-python3 cp2_cp4/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-baseline --capture-dir captures --min-speed-cm-s 65
+python3 cp2_cp6/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-baseline --capture-dir captures --min-speed-cm-s 65

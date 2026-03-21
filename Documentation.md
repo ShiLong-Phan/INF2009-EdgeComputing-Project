@@ -208,10 +208,10 @@ Exit criteria:
 
 Implemented files:
 
-1) cp2_cp4/event_schema.py
+1) cp2_cp6/event_schema.py
 - Shared schema encode/decode and payload validation.
 
-2) cp2_cp4/edge_event_publisher_pi.py
+2) cp2_cp6/edge_event_publisher_pi.py
 - mmWave trigger profiles (inside_bin, outside_bin).
 - Camera capture on trigger.
 - Local inference and recyclable keyword check.
@@ -219,10 +219,10 @@ Implemented files:
 - MQTT publish with QoS 1, dual topics (event + image), and optional duplicate publish mode.
 - CP5 integration with FIFO SQLite outbox, retries, and backoff.
 
-3) cp2_cp4/pi_outbox.py
+3) cp2_cp6/pi_outbox.py
 - Pi-side FIFO SQLite queue for event/image delivery tracking.
 
-4) cp2_cp4/server_event_receiver_laptop.py
+4) cp2_cp6/server_event_receiver_laptop.py
 - TLS MQTT receiver.
 - Schema validation.
 - SQLite idempotent upsert keyed by event_id.
@@ -230,11 +230,11 @@ Implemented files:
 - Image topic ingestion and local image persistence on laptop.
 - CP6 Gemini verification and verification status/result persistence.
 
-5) cp2_cp4/gemini_verifier.py
+5) cp2_cp6/gemini_verifier.py
 - Gemini image classification helper adapted for laptop-side verification.
 
-6) cp2_cp4/requirements-pi.txt
-7) cp2_cp4/requirements-laptop.txt
+6) cp2_cp6/requirements-pi.txt
+7) cp2_cp6/requirements-laptop.txt
 
 Operational guide:
 

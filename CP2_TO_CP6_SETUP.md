@@ -9,13 +9,13 @@ This document covers the implementation that was added in this repository for:
 
 ## Added Files
 
-- cp2_cp4/event_schema.py
-- cp2_cp4/edge_event_publisher_pi.py
-- cp2_cp4/pi_outbox.py
-- cp2_cp4/server_event_receiver_laptop.py
-- cp2_cp4/gemini_verifier.py
-- cp2_cp4/requirements-pi.txt
-- cp2_cp4/requirements-laptop.txt
+- cp2_cp6/event_schema.py
+- cp2_cp6/edge_event_publisher_pi.py
+- cp2_cp6/pi_outbox.py
+- cp2_cp6/server_event_receiver_laptop.py
+- cp2_cp6/gemini_verifier.py
+- cp2_cp6/requirements-pi.txt
+- cp2_cp6/requirements-laptop.txt
 
 ## CP2 Coverage
 
@@ -112,7 +112,7 @@ Run on your actual laptop after pulling this repo.
 python -m venv .venv-cp2-laptop
 .\.venv-cp2-laptop\Scripts\Activate.ps1
 pip install --upgrade pip
-pip install -r cp2_cp4\requirements-laptop.txt
+pip install -r cp2_cp6\requirements-laptop.txt
 ```
 
 Set Gemini API key in the same shell before running receiver:
@@ -124,7 +124,7 @@ $env:GEMINI_API_KEY = "<YOUR_API_KEY>"
 2. Run receiver:
 
 ```powershell
-python cp2_cp4\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db --image-store-dir .\data\images --gemini-model gemini-2.5-flash
+python cp2_cp6\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db --image-store-dir .\data\images --gemini-model gemini-2.5-flash
 ```
 
 ## Pi Commands (Edge Runtime)
@@ -137,13 +137,13 @@ Run on your actual Pi after pulling this repo.
 python3 -m venv .venv-cp2-pi
 source .venv-cp2-pi/bin/activate
 pip install --upgrade pip
-pip install -r cp2_cp4/requirements-pi.txt
+pip install -r cp2_cp6/requirements-pi.txt
 ```
 
 2. Run edge pipeline:
 
 ```bash
-python3 cp2_cp4/edge_event_publisher_pi.py \
+python3 cp2_cp6/edge_event_publisher_pi.py \
   --broker-host DOMCOM2 \
   --broker-port 8883 \
   --topic edge/events/v1 \
@@ -169,7 +169,7 @@ python3 cp2_cp4/edge_event_publisher_pi.py \
 3. Optional dedup test:
 
 ```bash
-python3 cp2_cp4/edge_event_publisher_pi.py \
+python3 cp2_cp6/edge_event_publisher_pi.py \
   --broker-host DOMCOM2 \
    --image-topic-prefix edge/images/v1 \
   --ca-cert certs/ca.crt \

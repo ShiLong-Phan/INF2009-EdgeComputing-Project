@@ -74,7 +74,7 @@ def upsert_event(db_path: str, payload_text: str, payload: dict) -> bool:
                 edge_model_version, edge_pred_label, edge_confidence,
                 image_ref, payload_version, raw_payload,
                 first_seen_utc, last_seen_utc, receive_count, image_path
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
             ON CONFLICT(event_id) DO UPDATE SET
                 device_id = excluded.device_id,
                 timestamp_utc = excluded.timestamp_utc,
