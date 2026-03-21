@@ -1,7 +1,5 @@
 python3 cp1_mqtt/mqtt_tls_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/cp1/hello --device-id pi-edge-01 --interval-sec 2 --count 20 --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key
 
-python3 cp1_mqtt/mqtt_tls_publisher_pi.py --broker-host 192.168.1.232 --broker-port 8883 --topic edge/cp1/hello --device-id pi-edge-01 --interval-sec 2 --count 20 --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key
-
 # Demo day host mapping refresh (run on Pi first, update IP as needed):
 ./scripts/update_broker_hostmap.sh --broker-ip 192.168.1.17 --broker-host DOMCOM2 --broker-port 8883
 
