@@ -164,7 +164,7 @@ Scope:
 Exit criteria:
 - Every received event has a verification result or explicit error status.
 
-### CP7 - Dashboard MVP
+### CP7 - Dashboard MVP (IMPLEMENTED IN CODE)
 
 Scope:
 - Show latest events, online/offline status, queue depth, agreement rate.
@@ -172,6 +172,10 @@ Scope:
 
 Exit criteria:
 - Dashboard provides enough information for demo and debugging.
+
+### CP7.5 - PASO (Do on MVP before further progress.)
+
+TODO: Fill up PASO Plan
 
 ### CP8 - ML/AI features
 Scope:
