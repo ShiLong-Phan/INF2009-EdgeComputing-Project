@@ -109,6 +109,10 @@ Set API key (optional for full verify, can be omitted and receiver will mark `sk
 $env:NANOGPT_API_KEY = "<YOUR_API_KEY>"
 ```
 
+''' CMD
+set NANOGPT_API_KEY=your_actual_key_here
+'''
+
 Run receiver (Terminal 2):
 
 ```powershell

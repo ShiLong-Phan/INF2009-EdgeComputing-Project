@@ -164,7 +164,7 @@ Scope:
 Exit criteria:
 - Every received event has a verification result or explicit error status.
 
-### CP7 - Dashboard MVP
+### CP7 - Dashboard MVP (IMPLEMENTED IN CODE)
 
 Scope:
 - Show latest events, online/offline status, queue depth, agreement rate.
@@ -172,6 +172,30 @@ Scope:
 
 Exit criteria:
 - Dashboard provides enough information for demo and debugging.
+
+### CP7.5 PASO (Check PasoPlan.md)
+
+Scope:
+Implement measured Profiling and Analysing on the current MVP before CP8/CP9 changes, then rerun the same measurements after changes and compare deltas.
+
+Required metrics for PASO evidence:
+1) CPU usage
+2) RAM usage
+3) Power proxy score (from sampled system counters)
+4) Edge reaction latency (trigger to local inference/sound)
+5) End-to-end verification latency (edge timestamp to verify completion)
+6) Accuracy/agreement rate (edge vs cloud normalized labels)
+
+Evidence rule for Scheduling stage:
+1) Scheduling is optional if profiling shows no meaningful CPU/memory contention and no queue pressure.
+2) If skipped, explicitly state why and cite measured evidence (not assumptions).
+
+Exit criteria:
+1) Baseline and after reports are generated in markdown/json.
+2) Comparison report includes deltas for latency/resource/agreement metrics.
+3) Bottleneck conclusions are based on measured data and identify whether battery/network assumptions were validated.
+
+
 
 ### CP8 - ML/AI features
 Scope:
@@ -215,6 +239,7 @@ Scope:
 - Add dashboard command to request edge cleanup.
 - Send command over MQTT control topic.
 - Edge acknowledges and deletes old images by policy.
+- Frame differencing for both Bin and Outside mount, to cut the object out of the frame and reduce resolution. Bin should refresh last frame constantly while outside bin mount can use the same initial background. Initial background frame should be triggered by the dashboard.
 
 Exit criteria:
 - Operator can trigger image cleanup from dashboard and see success/failure response.

@@ -1,4 +1,5 @@
 import argparse
+import csv
 import os
 import shutil
 import ssl
@@ -45,8 +46,26 @@ class EdgePublisherApp:
         self.labels = []
         self.connected = False
         self.outbox = PiOutbox(self.args.outbox_db_path)
+        self.paso_log_csv = os.path.abspath(self.args.paso_log_csv) if self.args.paso_log_csv else ""
 
         os.makedirs(self.args.capture_dir, exist_ok=True)
+        if self.paso_log_csv:
+            os.makedirs(os.path.dirname(self.paso_log_csv) or ".", exist_ok=True)
+            if not os.path.exists(self.paso_log_csv):
+                with open(self.paso_log_csv, "w", newline="", encoding="utf-8") as csv_file:
+                    writer = csv.writer(csv_file)
+                    writer.writerow(
+                        [
+                            "timestamp_utc",
+                            "event_id",
+                            "device_id",
+                            "trigger_mode",
+                            "edge_reaction_ms",
+                            "edge_pred_label",
+                            "edge_confidence",
+                            "outbox_pending",
+                        ]
+                    )
 
     @staticmethod
     def decode_signed(raw: int) -> Optional[int]:
@@ -216,6 +235,7 @@ class EdgePublisherApp:
         confidence: float,
         distance_cm: Optional[float],
         speed_cm_s: Optional[int],
+        edge_reaction_ms: float,
     ) -> dict:
         return {
             "event_id": str(uuid.uuid4()),
@@ -229,7 +249,27 @@ class EdgePublisherApp:
             "payload_version": SUPPORTED_PAYLOAD_VERSION,
             "mmwave_distance_cm": None if distance_cm is None else round(distance_cm, 1),
             "mmwave_speed_cm_s": speed_cm_s,
+            "edge_reaction_ms": round(edge_reaction_ms, 2),
         }
+
+    def append_paso_event_row(self, payload: dict) -> None:
+        if not self.paso_log_csv:
+            return
+
+        with open(self.paso_log_csv, "a", newline="", encoding="utf-8") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(
+                [
+                    utc_now_iso(),
+                    payload.get("event_id", ""),
+                    payload.get("device_id", ""),
+                    payload.get("trigger_mode", ""),
+                    payload.get("edge_reaction_ms", ""),
+                    payload.get("edge_pred_label", ""),
+                    payload.get("edge_confidence", ""),
+                    self.outbox.count_pending(),
+                ]
+            )
 
     def _wait_publish(self, info) -> None:
         info.wait_for_publish(timeout=self.args.publish_timeout_sec)
@@ -360,6 +400,7 @@ class EdgePublisherApp:
                     is_rising_edge = not self.motion_state
 
                     if is_rising_edge and (now - self.last_trigger_monotonic) >= self.args.debounce_sec:
+                        trigger_started = time.perf_counter()
                         self.last_trigger_monotonic = now
 
                         if latest_camera_frame is None:
@@ -377,17 +418,21 @@ class EdgePublisherApp:
                         if self.is_recyclable(label):
                             self.play_affirmative_sound()
 
+                        edge_reaction_ms = (time.perf_counter() - trigger_started) * 1000.0
+
                         payload = self.build_event_payload(
                             image_ref=file_name,
                             label=label,
                             confidence=confidence,
                             distance_cm=distance_cm,
                             speed_cm_s=speed_cm_s,
+                            edge_reaction_ms=edge_reaction_ms,
                         )
                         payload_text = encode_payload(payload)
                         self.outbox.enqueue(payload["event_id"], payload_text, image_path)
+                        self.append_paso_event_row(payload)
                         print(
-                            f"[EDGE] Queued event_id={payload['event_id']} label={payload['edge_pred_label']} conf={payload['edge_confidence']} pending={self.outbox.count_pending()}"
+                            f"[EDGE] Queued event_id={payload['event_id']} label={payload['edge_pred_label']} conf={payload['edge_confidence']} edge_reaction_ms={payload['edge_reaction_ms']} pending={self.outbox.count_pending()}"
                         )
 
                     self.motion_state = True
@@ -464,6 +509,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--publish-timeout-sec", type=float, default=5.0)
     parser.add_argument("--max-image-bytes", type=int, default=400000)
     parser.add_argument("--delete-image-after-send", action="store_true")
+    parser.add_argument(
+        "--paso-log-csv",
+        default="",
+        help="Optional CSV file to append per-event PASO profiling rows (edge reaction timing).",
+    )
 
     return parser
 
