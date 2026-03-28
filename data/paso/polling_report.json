@@ -1,0 +1,107 @@
+{
+  "label": "polling",
+  "db": {
+    "event_count": 23,
+    "verification_status_counts": {},
+    "events_by_device": {},
+    "agreement_rate_ok_percent": null,
+    "latency_ms": {
+      "edge_reaction": {
+        "count": 23,
+        "mean": 33.495,
+        "median": 31.44,
+        "p95": 52.779
+      },
+      "broker_ingest": {
+        "count": 0,
+        "mean": null,
+        "median": null,
+        "p95": null
+      },
+      "image_arrival": {
+        "count": 0,
+        "mean": null,
+        "median": null,
+        "p95": null
+      },
+      "verification_done": {
+        "count": 0,
+        "mean": null,
+        "median": null,
+        "p95": null
+      }
+    }
+  },
+  "system": {
+    "cpu_percent_total": {
+      "count": 298,
+      "mean": 2.809,
+      "median": 2.3,
+      "p95": 6.745
+    },
+    "mem_percent_total": {
+      "count": 298,
+      "mean": 66.686,
+      "median": 66.9,
+      "p95": 67.1
+    },
+    "power_proxy_score": {
+      "count": 298,
+      "mean": 2.809,
+      "median": 2.3,
+      "p95": 6.745
+    },
+    "proc_cpu_percent": {
+      "count": 298,
+      "mean": 0.0,
+      "median": 0.0,
+      "p95": 0.0
+    },
+    "proc_rss_mb": {
+      "count": 298,
+      "mean": 4.439,
+      "median": 4.438,
+      "p95": 4.449
+    }
+  },
+  "system_pi": {
+    "cpu_percent_total": {
+      "count": 300,
+      "mean": 19.797,
+      "median": 8.8,
+      "p95": 53.91
+    },
+    "mem_percent_total": {
+      "count": 300,
+      "mean": 38.818,
+      "median": 38.8,
+      "p95": 39.3
+    },
+    "power_proxy_score": {
+      "count": 300,
+      "mean": 44.267,
+      "median": 17.88,
+      "p95": 129.384
+    },
+    "proc_cpu_percent": {
+      "count": 300,
+      "mean": 13.389,
+      "median": 14.0,
+      "p95": 17.0
+    },
+    "proc_rss_mb": {
+      "count": 300,
+      "mean": 142.942,
+      "median": 145.656,
+      "p95": 146.109
+    }
+  },
+  "event_filter": {
+    "event_csv": "C:\\Users\\domin\\Desktop\\misc\\INF2009-EdgeComputing-Project\\data\\paso\\pi_edge_events_polling.csv",
+    "event_ids_in_csv": 23,
+    "edge_reaction_source": "pi_event_csv_fallback"
+  },
+  "findings": [
+    "No immediate critical bottleneck threshold was exceeded in this run."
+  ]
+}

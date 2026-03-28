@@ -35,7 +35,7 @@ Pi commands (bash):
 
 Laptop commands (PowerShell):
 - Baseline analysis report:
-  python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label baseline --system-csv data/paso/laptop_baseline_system.csv --output-md data/paso/baseline_report.md --output-json data/paso/baseline_report.json
+  python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label baseline --system-csv data/paso/laptop_baseline_system.csv --pi-system-csv data/paso/pi_baseline_system.csv --output-md data/paso/baseline_report.md --output-json data/paso/baseline_report.json
 
 2) Implement CP8/CP9 improvements.
 
@@ -54,7 +54,7 @@ Pi commands (bash):
 
 Laptop commands (PowerShell):
 - After-run analysis report:
-  python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label after --system-csv data/paso/laptop_after_system.csv --output-md data/paso/after_report.md --output-json data/paso/after_report.json
+  python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label after --system-csv data/paso/laptop_after_system.csv --pi-system-csv data/paso/pi_after_system.csv --output-md data/paso/after_report.md --output-json data/paso/after_report.json
 
 4) Camera-motion prototype comparison (optional — shows mmWave-trigger vs always-on-camera cost)
 
@@ -70,7 +70,7 @@ Laptop commands (PowerShell):
   python cp2_cp6/paso_system_profile.py --output-csv data/paso/laptop_polling_system.csv --duration-sec 300 --interval-sec 1 --label polling --process-name server_event_receiver_laptop.py
 
 - Polling analysis report (filter to events from this run's CSV):
-  python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label polling --system-csv data/paso/laptop_polling_system.csv --event-csv data/paso/pi_edge_events_polling.csv --output-md data/paso/polling_report.md --output-json data/paso/polling_report.json
+  python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label polling --system-csv data/paso/laptop_polling_system.csv --pi-system-csv data/paso/pi_polling_system.csv --event-csv data/paso/pi_edge_events_polling.csv --output-md data/paso/polling_report.md --output-json data/paso/polling_report.json
 
 - Compare baseline (mmWave-triggered) vs polling (always-on camera):
   python cp2_cp6/paso_compare_runs.py --before-json data/paso/baseline_report_filtered.json --after-json data/paso/polling_report.json --output-md data/paso/comparison_polling_vs_baseline.md

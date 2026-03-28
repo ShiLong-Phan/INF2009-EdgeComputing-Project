@@ -41,13 +41,21 @@ def main() -> None:
     with open(args.after_json, "r", encoding="utf-8") as f:
         after = json.load(f)
 
+    # For CPU/RAM/power use Pi system metrics when available — that's what
+    # actually changes between trigger approaches. Fall back to system (laptop)
+    # if no Pi CSV was provided for a run.
+    def sys_path(report: Dict, key: str) -> str:
+        if report.get("system_pi"):
+            return f"system_pi.{key}"
+        return f"system.{key}"
+
     metrics = [
         ("Edge reaction p95 (ms)", "db.latency_ms.edge_reaction.p95", "lower"),
         ("Broker ingest p95 (ms)", "db.latency_ms.broker_ingest.p95", "lower"),
         ("Verification done p95 (ms)", "db.latency_ms.verification_done.p95", "lower"),
-        ("System CPU mean (%)", "system.cpu_percent_total.mean", "lower"),
-        ("System memory mean (%)", "system.mem_percent_total.mean", "lower"),
-        ("Power proxy mean", "system.power_proxy_score.mean", "lower"),
+        ("Pi CPU mean (%)", sys_path(before, "cpu_percent_total.mean"), "lower"),
+        ("Pi memory mean (%)", sys_path(before, "mem_percent_total.mean"), "lower"),
+        ("Pi power proxy mean", sys_path(before, "power_proxy_score.mean"), "lower"),
         ("Agreement rate (%)", "db.agreement_rate_ok_percent", "higher"),
     ]
 

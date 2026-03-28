@@ -186,6 +186,26 @@ def analyze_db(db_path: str, event_ids: Optional[Set[str]] = None) -> Dict:
     }
 
 
+def analyze_edge_reaction_from_csv(csv_path: str) -> Dict:
+    """Read edge_reaction_ms directly from a Pi event CSV.
+
+    Used as a fallback when the matching events are not in the DB (e.g. the
+    outbox never drained to the laptop receiver).
+    """
+    values: List[float] = []
+    with open(csv_path, "r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames and "edge_reaction_ms" in reader.fieldnames:
+            for row in reader:
+                raw = (row.get("edge_reaction_ms") or "").strip()
+                if raw:
+                    try:
+                        values.append(float(raw))
+                    except ValueError:
+                        pass
+    return summarize(values)
+
+
 def analyze_system_csv(csv_path: str) -> Dict:
     cpu: List[float] = []
     mem: List[float] = []
@@ -228,11 +248,13 @@ def build_findings(report: Dict) -> List[str]:
     if edge_p95 is not None and edge_p95 > 300:
         findings.append("Edge reaction p95 is above 300ms: consider capture/inference optimizations.")
 
-    sys_cpu_mean = report.get("system", {}).get("cpu_percent_total", {}).get("mean")
+    # Use Pi system metrics for threshold checks when available.
+    sys_metrics = report.get("system_pi") or report.get("system", {})
+    sys_cpu_mean = sys_metrics.get("cpu_percent_total", {}).get("mean")
     if sys_cpu_mean is not None and sys_cpu_mean > 70:
         findings.append("Average CPU usage is high (>70%): prioritize CPU-bound optimization steps.")
 
-    sys_mem_mean = report.get("system", {}).get("mem_percent_total", {}).get("mean")
+    sys_mem_mean = sys_metrics.get("mem_percent_total", {}).get("mean")
     if sys_mem_mean is not None and sys_mem_mean > 75:
         findings.append("Average memory usage is high (>75%): inspect image buffering and object lifetimes.")
 
@@ -244,7 +266,9 @@ def build_findings(report: Dict) -> List[str]:
 
 def write_markdown(path: str, label: str, report: Dict) -> None:
     db = report.get("db", {})
-    sys = report.get("system", {})
+    # Prefer Pi/edge system metrics; fall back to laptop if Pi CSV wasn't provided.
+    sys = report.get("system_pi") or report.get("system", {})
+    sys_source = "Pi (edge device)" if report.get("system_pi") else "Laptop (receiver)"
     lat = db.get("latency_ms", {})
 
     lines = []
@@ -266,7 +290,7 @@ def write_markdown(path: str, label: str, report: Dict) -> None:
         )
     lines.append("")
 
-    lines.append("## System Metrics")
+    lines.append(f"## System Metrics ({sys_source})")
     lines.append("| Metric | Count | Mean | Median | P95 |")
     lines.append("|---|---:|---:|---:|---:|")
     for key in ["cpu_percent_total", "mem_percent_total", "power_proxy_score", "proc_cpu_percent", "proc_rss_mb"]:
@@ -293,7 +317,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze one PASO run from SQLite + optional system CSV")
     parser.add_argument("--db-path", required=True)
     parser.add_argument("--label", default="baseline")
-    parser.add_argument("--system-csv", default="")
+    parser.add_argument("--system-csv", default="", help="Laptop/receiver system metrics CSV.")
+    parser.add_argument("--pi-system-csv", default="", help="Pi/publisher system metrics CSV.")
     parser.add_argument(
         "--event-csv",
         default="",
@@ -311,12 +336,26 @@ def main() -> None:
         "label": args.label,
         "db": analyze_db(args.db_path, event_ids=filtered_event_ids),
         "system": analyze_system_csv(args.system_csv) if args.system_csv else {},
+        "system_pi": analyze_system_csv(args.pi_system_csv) if args.pi_system_csv else {},
     }
     if filtered_event_ids is not None:
         report["event_filter"] = {
             "event_csv": os.path.abspath(args.event_csv),
             "event_ids_in_csv": len(filtered_event_ids),
         }
+
+    # If the DB has no matching events but we have a Pi CSV, read edge_reaction_ms
+    # directly from the CSV. This covers the case where the Pi outbox never drained
+    # to the laptop receiver (network down, receiver not running, etc.).
+    db_result = report["db"]
+    if db_result["event_count"] == 0 and args.event_csv:
+        csv_edge = analyze_edge_reaction_from_csv(args.event_csv)
+        if csv_edge["count"] > 0:
+            db_result["latency_ms"]["edge_reaction"] = csv_edge
+            db_result["event_count"] = csv_edge["count"]
+            if "event_filter" in report:
+                report["event_filter"]["edge_reaction_source"] = "pi_event_csv_fallback"
+
     report["findings"] = build_findings(report)
 
     output_md = os.path.abspath(args.output_md)
