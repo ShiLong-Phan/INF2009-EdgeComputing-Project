@@ -1,10 +1,20 @@
+"""Camera-motion edge publisher (prototype comparison baseline).
+
+Replaces the mmWave sensor with camera-based motion detection.
+The camera runs continuously; when frame-differencing detects movement
+above --motion-min-area-px pixels, inference fires and an event is
+published — same debounce and PASO logging as edge_event_publisher_pi.py.
+
+This models the original prototype design where the camera handles both
+motion sensing and image capture, with no dedicated hardware sensor.
+"""
+
 import argparse
 import csv
 import os
 import re
 import shutil
 import ssl
-import struct
 import subprocess
 import time
 import uuid
@@ -15,35 +25,15 @@ import json
 import cv2
 import numpy as np
 import paho.mqtt.client as mqtt
-import serial
 
 from event_schema import SUPPORTED_PAYLOAD_VERSION, encode_payload, utc_now_iso
 from pi_outbox import PiOutbox
 
-FRAME_HEADER = bytes([0xAA, 0xFF, 0x03, 0x00])
-FRAME_TAIL = bytes([0x55, 0xCC])
-FRAME_SIZE = 30
-MAX_TARGETS = 3
 
-TRIGGER_PROFILES = {
-    "inside_bin": {
-        "min_abs_speed": 65,
-        "max_distance_cm": None,
-    },
-    "outside_bin": {
-        "min_abs_speed": 70,
-        "max_distance_cm": None,
-    },
-}
-
-
-class EdgePublisherApp:
+class PollingPublisherApp:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self._resolve_sound_file_path()
-        self.motion_state = False
-        self.serial_buffer = bytearray()
-        self.last_trigger_monotonic = 0.0
         self.net = None
         self.labels = []
         self.connected = False
@@ -78,82 +68,11 @@ class EdgePublisherApp:
             self.args.sound_file = os.path.abspath(requested)
             return
 
-        # Fallback for Pi-specific absolute paths (e.g. /home/pi/sounds/beep.wav)
-        # when running from this repository on another host.
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         fallback = os.path.join(repo_root, "sounds", os.path.basename(requested))
         if os.path.exists(fallback):
             print(f"[EDGE] Using fallback sound file: {fallback}")
             self.args.sound_file = fallback
-
-    @staticmethod
-    def decode_signed(raw: int) -> Optional[int]:
-        if raw == 0:
-            return None
-        magnitude = raw & 0x7FFF
-        return -magnitude if (raw & 0x8000) else magnitude
-
-    def parse_mmwave_frame(self, frame: bytes) -> Tuple[bool, Optional[float], Optional[int]]:
-        if len(frame) != FRAME_SIZE or frame[:4] != FRAME_HEADER or frame[-2:] != FRAME_TAIL:
-            return False, None, None
-
-        cfg = TRIGGER_PROFILES[self.args.trigger_mode]
-        min_abs_speed = self.args.min_speed_cm_s
-        if min_abs_speed is None:
-            min_abs_speed = cfg["min_abs_speed"]
-
-        max_distance_cm = self.args.max_distance_cm
-        if max_distance_cm is None:
-            max_distance_cm = cfg["max_distance_cm"]
-
-        for i in range(MAX_TARGETS):
-            offset = 4 + i * 8
-            x_raw, y_raw, spd_raw, _ = struct.unpack_from("<4H", frame, offset)
-
-            x_val = self.decode_signed(x_raw)
-            y_val = self.decode_signed(y_raw)
-            spd_val = self.decode_signed(spd_raw)
-
-            # Follow prototype behavior: skip empty slot; otherwise require real movement speed.
-            if x_val is None and y_val is None and spd_val is None:
-                continue
-
-            has_target = (x_raw != 0) or (y_raw != 0)
-            if not has_target or spd_val is None:
-                continue
-
-            distance_cm = abs(y_val) / 10.0 if y_val is not None else None
-            speed = spd_val
-
-            if abs(speed) < float(min_abs_speed):
-                continue
-
-            if distance_cm is not None and max_distance_cm is not None and distance_cm > float(max_distance_cm):
-                continue
-
-            print(
-                f"[SENSOR] Fast motion detected speed={speed} cm/s distance_cm={distance_cm} threshold={min_abs_speed}"
-            )
-            if distance_cm is None:
-                return True, None, speed
-
-            if max_distance_cm is None or distance_cm <= float(max_distance_cm):
-                return True, distance_cm, speed
-
-        return False, None, None
-
-    def read_mmwave_frame(self, ser: serial.Serial) -> Optional[bytes]:
-        if ser.in_waiting:
-            self.serial_buffer.extend(ser.read(ser.in_waiting))
-
-        while len(self.serial_buffer) >= 4 and self.serial_buffer[:4] != FRAME_HEADER:
-            self.serial_buffer.pop(0)
-
-        if len(self.serial_buffer) >= FRAME_SIZE:
-            frame = bytes(self.serial_buffer[:FRAME_SIZE])
-            del self.serial_buffer[:FRAME_SIZE]
-            return frame
-        return None
 
     def try_load_model(self) -> None:
         if not os.path.exists(self.args.model_path) or not os.path.exists(self.args.label_path):
@@ -210,7 +129,6 @@ class EdgePublisherApp:
             if usb_device and usb_device not in candidates:
                 candidates.append(usb_device)
 
-            # Try system default as final fallback.
             candidates.append("")
 
             tried = set()
@@ -259,7 +177,6 @@ class EdgePublisherApp:
         if reason_code == 0:
             self.connected = True
             print("[EDGE] Connected to MQTT broker.")
-            client.subscribe(f"{self.args.ping_request_topic_prefix.rstrip('/')}/{self.args.device_id}", qos=1)
         else:
             self.connected = False
             print(f"[EDGE] MQTT connection failed: reason_code={reason_code}")
@@ -268,50 +185,25 @@ class EdgePublisherApp:
         self.connected = False
         print(f"[EDGE] Disconnected from MQTT broker: reason_code={reason_code}")
 
-    def on_message(self, client, _userdata, msg: mqtt.MQTTMessage) -> None:
-        expected_topic = f"{self.args.ping_request_topic_prefix.rstrip('/')}/{self.args.device_id}"
-        if msg.topic != expected_topic:
-            return
-
-        request_id = ""
-        sent_utc = ""
-        try:
-            body = json.loads(msg.payload.decode("utf-8", errors="strict"))
-            request_id = str(body.get("request_id") or "")
-            sent_utc = str(body.get("timestamp_utc") or "")
-        except Exception:
-            pass
-
-        pong_topic = f"{self.args.ping_response_topic_prefix.rstrip('/')}/{self.args.device_id}"
-        response = {
-            "device_id": self.args.device_id,
-            "request_id": request_id,
-            "request_timestamp_utc": sent_utc,
-            "response_timestamp_utc": utc_now_iso(),
-        }
-        client.publish(pong_topic, payload=json.dumps(response), qos=1, retain=False)
-
     def build_event_payload(
         self,
         image_ref: str,
         label: str,
         confidence: float,
-        distance_cm: Optional[float],
-        speed_cm_s: Optional[int],
         edge_reaction_ms: float,
     ) -> dict:
         return {
             "event_id": str(uuid.uuid4()),
             "device_id": self.args.device_id,
             "timestamp_utc": utc_now_iso(),
-            "trigger_mode": self.args.trigger_mode,
+            "trigger_mode": "camera_motion",
             "edge_model_version": self.args.edge_model_version,
             "edge_pred_label": label,
             "edge_confidence": round(confidence, 4),
             "image_ref": image_ref,
             "payload_version": SUPPORTED_PAYLOAD_VERSION,
-            "mmwave_distance_cm": None if distance_cm is None else round(distance_cm, 1),
-            "mmwave_speed_cm_s": speed_cm_s,
+            "mmwave_distance_cm": None,
+            "mmwave_speed_cm_s": None,
             "edge_reaction_ms": round(edge_reaction_ms, 2),
         }
 
@@ -344,11 +236,6 @@ class EdgePublisherApp:
         self._wait_publish(result)
         print(f"[EDGE] Published event metadata event_id={event_id} mid={result.mid}")
 
-        if self.args.publish_duplicate:
-            dup_result = client.publish(self.args.topic, payload=payload_text, qos=1, retain=False)
-            self._wait_publish(dup_result)
-            print(f"[EDGE] Published duplicate metadata event_id={event_id} mid={dup_result.mid}")
-
     def _publish_event_image(self, client: mqtt.Client, event_id: str, image_path: str) -> None:
         if not os.path.exists(image_path):
             raise RuntimeError(f"queued image not found: {image_path}")
@@ -365,11 +252,6 @@ class EdgePublisherApp:
         result = client.publish(image_topic, payload=image_bytes, qos=1, retain=False)
         self._wait_publish(result)
         print(f"[EDGE] Published event image event_id={event_id} bytes={len(image_bytes)} mid={result.mid}")
-
-        if self.args.publish_duplicate:
-            dup_result = client.publish(image_topic, payload=image_bytes, qos=1, retain=False)
-            self._wait_publish(dup_result)
-            print(f"[EDGE] Published duplicate image event_id={event_id} mid={dup_result.mid}")
 
     def drain_outbox(self, client: mqtt.Client) -> None:
         if not self.connected:
@@ -404,7 +286,6 @@ class EdgePublisherApp:
     def run(self) -> None:
         self.try_load_model()
 
-        ser = serial.Serial(self.args.mmwave_port, self.args.mmwave_baud, timeout=0.1)
         cap = cv2.VideoCapture(self.args.camera_id)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.args.frame_width)
@@ -416,7 +297,6 @@ class EdgePublisherApp:
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         client.on_connect = self.on_connect
         client.on_disconnect = self.on_disconnect
-        client.on_message = self.on_message
         client.tls_set(
             ca_certs=self.args.ca_cert,
             certfile=self.args.client_cert,
@@ -434,118 +314,118 @@ class EdgePublisherApp:
         except Exception as e:
             print(f"[EDGE] Initial connection failed ({e}). Entering offline mode.")
 
-        print("[EDGE] CP2-CP4 pipeline running. Press Ctrl+C to stop.")
+        print("[EDGE] Camera-motion pipeline running. Press Ctrl+C to stop.")
+
+        blur_k = self.args.motion_blur_ksize
+        if blur_k % 2 == 0:
+            blur_k += 1  # kernel size must be odd
+        prev_gray = None
+        last_trigger_monotonic = 0.0
 
         try:
-            latest_camera_frame = None
             while True:
-                ret, camera_frame = cap.read()
-                if ret:
-                    latest_camera_frame = camera_frame
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    time.sleep(0.02)
+                    self.drain_outbox(client)
+                    continue
 
-                latest = None
-                while True:
-                    frame = self.read_mmwave_frame(ser)
-                    if frame is None:
-                        break
-                    latest = frame
+                gray = cv2.GaussianBlur(
+                    cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (blur_k, blur_k), 0
+                )
 
-                if latest is None:
-                    is_now_active = self.motion_state
-                    distance_cm = None
-                    speed_cm_s = None
-                else:
-                    is_now_active, distance_cm, speed_cm_s = self.parse_mmwave_frame(latest)
+                if prev_gray is None:
+                    prev_gray = gray
+                    continue
+
+                diff = cv2.absdiff(prev_gray, gray)
+                prev_gray = gray  # rolling: always compare to previous frame
+
+                _, thresh = cv2.threshold(
+                    diff, self.args.motion_threshold, 255, cv2.THRESH_BINARY
+                )
+                contours, _ = cv2.findContours(
+                    thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
+                motion_detected = any(
+                    cv2.contourArea(c) >= self.args.motion_min_area_px for c in contours
+                )
 
                 now = time.monotonic()
+                if motion_detected and (now - last_trigger_monotonic) >= self.args.debounce_sec:
+                    trigger_started = time.perf_counter()
+                    last_trigger_monotonic = now
 
-                if is_now_active:
-                    is_rising_edge = not self.motion_state
+                    image = frame.copy()
+                    label, confidence = self.run_inference(image)
+                    edge_reaction_ms = (time.perf_counter() - trigger_started) * 1000.0
 
-                    if is_rising_edge and (now - self.last_trigger_monotonic) >= self.args.debounce_sec:
-                        trigger_started = time.perf_counter()
-                        self.last_trigger_monotonic = now
+                    if self.is_recyclable(label):
+                        self.play_affirmative_sound()
 
-                        if latest_camera_frame is None:
-                            print("[EDGE] Camera frame capture failed. Skipping trigger.")
-                            self.motion_state = True
-                            continue
+                    file_name = f"motion_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
+                    image_path = os.path.join(self.args.capture_dir, file_name)
+                    cv2.imwrite(image_path, image)
 
-                        image = latest_camera_frame.copy()
-
-                        file_name = f"trigger_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
-                        image_path = os.path.join(self.args.capture_dir, file_name)
-                        cv2.imwrite(image_path, image)
-
-                        label, confidence = self.run_inference(image)
-                        edge_reaction_ms = (time.perf_counter() - trigger_started) * 1000.0
-
-                        if self.is_recyclable(label):
-                            self.play_affirmative_sound()
-
-                        payload = self.build_event_payload(
-                            image_ref=file_name,
-                            label=label,
-                            confidence=confidence,
-                            distance_cm=distance_cm,
-                            speed_cm_s=speed_cm_s,
-                            edge_reaction_ms=edge_reaction_ms,
-                        )
-                        payload_text = encode_payload(payload)
-                        self.outbox.enqueue(payload["event_id"], payload_text, image_path)
-                        self.append_paso_event_row(payload)
-                        print(
-                            f"[EDGE] Queued event_id={payload['event_id']} label={payload['edge_pred_label']} conf={payload['edge_confidence']} edge_reaction_ms={payload['edge_reaction_ms']} pending={self.outbox.count_pending()}"
-                        )
-
-                    self.motion_state = True
+                    payload = self.build_event_payload(
+                        image_ref=file_name,
+                        label=label,
+                        confidence=confidence,
+                        edge_reaction_ms=edge_reaction_ms,
+                    )
+                    payload_text = encode_payload(payload)
+                    self.outbox.enqueue(payload["event_id"], payload_text, image_path)
+                    self.append_paso_event_row(payload)
+                    print(
+                        f"[EDGE] Queued event_id={payload['event_id']} label={payload['edge_pred_label']} conf={payload['edge_confidence']} edge_reaction_ms={payload['edge_reaction_ms']} pending={self.outbox.count_pending()}"
+                    )
                 else:
-                    self.motion_state = False
                     time.sleep(0.02)
 
                 self.drain_outbox(client)
+
         except KeyboardInterrupt:
             print("\n[EDGE] Stopped by user.")
         finally:
             client.loop_stop()
             client.disconnect()
             cap.release()
-            ser.close()
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CP2-CP4 edge publisher (Pi)")
+    parser = argparse.ArgumentParser(description="Polling-based edge publisher (prototype comparison)")
     parser.add_argument("--broker-host", required=True)
     parser.add_argument("--broker-port", type=int, default=8883)
     parser.add_argument("--topic", default="edge/events/v1")
     parser.add_argument("--image-topic-prefix", default="edge/images/v1")
     parser.add_argument("--device-id", default="pi-edge-01")
-    parser.add_argument("--ping-request-topic-prefix", default="edge/ping/request")
-    parser.add_argument("--ping-response-topic-prefix", default="edge/ping/response")
-    parser.add_argument("--trigger-mode", choices=["inside_bin", "outside_bin"], default="inside_bin")
 
     parser.add_argument("--ca-cert", required=True)
     parser.add_argument("--client-cert", required=True)
     parser.add_argument("--client-key", required=True)
     parser.add_argument("--insecure", action="store_true")
 
-    parser.add_argument("--mmwave-port", default="/dev/ttyAMA0")
-    parser.add_argument("--mmwave-baud", type=int, default=256000)
     parser.add_argument("--camera-id", type=int, default=0)
     parser.add_argument("--frame-width", type=int, default=640)
     parser.add_argument("--frame-height", type=int, default=480)
     parser.add_argument("--debounce-sec", type=float, default=1.0)
     parser.add_argument(
-        "--min-speed-cm-s",
+        "--motion-min-area-px",
         type=float,
-        default=None,
-        help="Absolute speed threshold for trigger. Defaults: inside_bin=65, outside_bin=70.",
+        default=3000.0,
+        help="Minimum contour area (pixels) in the thresholded diff image to count as motion.",
     )
     parser.add_argument(
-        "--max-distance-cm",
-        type=float,
-        default=None,
-        help="Optional max distance gate. Leave unset to disable distance filtering.",
+        "--motion-threshold",
+        type=int,
+        default=25,
+        help="Pixel intensity change threshold for the frame-diff binarisation (0-255).",
+    )
+    parser.add_argument(
+        "--motion-blur-ksize",
+        type=int,
+        default=21,
+        help="Gaussian blur kernel size applied before differencing (must be odd).",
     )
 
     parser.add_argument("--model-path", default="mobilenet_v2_1.0_224.tflite")
@@ -555,18 +435,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--recyclable-keywords", default="bottle,can,plastic,aluminum,tin")
     parser.add_argument("--sound-file", default="")
-    parser.add_argument(
-        "--sound-device",
-        default="",
-        help="Optional ALSA device for aplay, e.g. plughw:3,0. Leave empty to use system default.",
-    )
+    parser.add_argument("--sound-device", default="")
 
-    parser.add_argument(
-        "--publish-duplicate",
-        action="store_true",
-        help="Publish each event twice to validate server-side deduplication",
-    )
-    parser.add_argument("--outbox-db-path", default="data/pi_outbox.db")
+    parser.add_argument("--outbox-db-path", default="data/pi_outbox_polling.db")
     parser.add_argument("--retry-base-sec", type=float, default=2.0)
     parser.add_argument("--max-retry-backoff-sec", type=float, default=60.0)
     parser.add_argument("--publish-timeout-sec", type=float, default=5.0)
@@ -583,7 +454,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    app = EdgePublisherApp(args)
+    app = PollingPublisherApp(args)
     app.run()
 
 

@@ -56,8 +56,27 @@ Laptop commands (PowerShell):
 - After-run analysis report:
   python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label after --system-csv data/paso/laptop_after_system.csv --output-md data/paso/after_report.md --output-json data/paso/after_report.json
 
-4) Direct baseline vs after comparison (Laptop)
-- python cp2_cp6/paso_compare_runs.py --before-json data/paso/baseline_report.json --after-json data/paso/after_report.json --output-md data/paso/comparison.md
+4) Camera-motion prototype comparison (optional — shows mmWave-trigger vs always-on-camera cost)
+
+Pi commands (bash):
+- Start Pi system profiler for polling run:
+  python3 cp2_cp6/paso_system_profile.py --output-csv data/paso/pi_polling_system.csv --duration-sec 300 --interval-sec 1 --label polling --process-name edge_event_publisher_polling.py
+
+- Run camera-motion publisher (no mmWave, camera detects motion via frame differencing):
+  python3 cp2_cp6/edge_event_publisher_polling.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --device-id pi-edge-01 --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-baseline --capture-dir captures --sound-file sounds/beep.wav --outbox-db-path data/pi_outbox_polling.db --retry-base-sec 2 --max-retry-backoff-sec 60 --max-image-bytes 400000 --debounce-sec 1.0 --motion-min-area-px 3000 --motion-threshold 25 --paso-log-csv data/paso/pi_edge_events_polling.csv
+
+Laptop commands (PowerShell):
+- Start laptop system profiler for polling run:
+  python cp2_cp6/paso_system_profile.py --output-csv data/paso/laptop_polling_system.csv --duration-sec 300 --interval-sec 1 --label polling --process-name server_event_receiver_laptop.py
+
+- Polling analysis report (filter to events from this run's CSV):
+  python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label polling --system-csv data/paso/laptop_polling_system.csv --event-csv data/paso/pi_edge_events_polling.csv --output-md data/paso/polling_report.md --output-json data/paso/polling_report.json
+
+- Compare baseline (mmWave-triggered) vs polling (always-on camera):
+  python cp2_cp6/paso_compare_runs.py --before-json data/paso/baseline_report_filtered.json --after-json data/paso/polling_report.json --output-md data/paso/comparison_polling_vs_baseline.md
+
+5) Direct baseline vs after comparison (Laptop)
+- python cp2_cp6/paso_compare_runs.py --before-json data/paso/baseline_report_filtered.json --after-json data/paso/after_report.json --output-md data/paso/comparison.md
 
 Scheduling note for report:
 If Scheduling is skipped, justify it with measured CPU/RAM/queue pressure evidence instead of stating Pi 5 is overpowered by assumption.
