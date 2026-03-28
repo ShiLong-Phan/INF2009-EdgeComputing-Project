@@ -198,7 +198,6 @@ python3 cp2_cp6/edge_event_publisher_pi.py \
   --edge-model-version mobilenetv2-baseline \
   --capture-dir captures \
   --sound-file sounds/beep.wav \
-  --sound-device plughw:3,0 \
   --min-speed-cm-s 65 \
   --outbox-db-path data/pi_outbox.db \
   --retry-base-sec 2 \
@@ -225,7 +224,6 @@ python3 cp2_cp6/edge_event_publisher_pi.py \
   --edge-model-version mobilenetv2-baseline \
   --capture-dir captures \
   --sound-file sounds/beep.wav \
-  --sound-device plughw:3,0 \
   --min-speed-cm-s 65 \
   --outbox-db-path data/pi_outbox.db \
   --retry-base-sec 2 \

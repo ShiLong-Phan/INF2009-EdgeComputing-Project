@@ -1,6 +1,7 @@
 import argparse
 import csv
 import os
+import re
 import shutil
 import ssl
 import struct
@@ -201,14 +202,58 @@ class EdgePublisherApp:
             return
 
         if shutil.which("aplay"):
-            cmd = ["aplay"]
+            candidates = []
             if self.args.sound_device:
-                cmd.extend(["-D", self.args.sound_device])
-            cmd.append(self.args.sound_file)
-            subprocess.run(cmd, check=False)
+                candidates.append(self.args.sound_device)
+
+            usb_device = self._detect_usb_sound_device()
+            if usb_device and usb_device not in candidates:
+                candidates.append(usb_device)
+
+            # Try system default as final fallback.
+            candidates.append("")
+
+            tried = set()
+            for device in candidates:
+                if device in tried:
+                    continue
+                tried.add(device)
+
+                cmd = ["aplay"]
+                if device:
+                    cmd.extend(["-D", device])
+                cmd.append(self.args.sound_file)
+
+                result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+                if result.returncode == 0:
+                    if device and device != self.args.sound_device:
+                        print(f"[EDGE] Sound playback succeeded using device: {device}")
+                    return
+
+                stderr = (result.stderr or "").strip()
+                last_line = stderr.splitlines()[-1] if stderr else "unknown aplay error"
+                print(f"[EDGE] Sound playback failed on device '{device or 'default'}': {last_line}")
+
             return
 
         print("[EDGE] 'aplay' not found. Skipping sound playback.")
+
+    def _detect_usb_sound_device(self) -> str:
+        try:
+            result = subprocess.run(["aplay", "-l"], check=False, capture_output=True, text=True)
+            if result.returncode != 0:
+                return ""
+
+            for line in (result.stdout or "").splitlines():
+                if "usb" not in line.lower():
+                    continue
+                match = re.search(r"card\s+(\d+):", line)
+                if match:
+                    return f"plughw:{match.group(1)},0"
+        except Exception:
+            return ""
+
+        return ""
 
     def on_connect(self, client, _userdata, _flags, reason_code, _properties) -> None:
         if reason_code == 0:

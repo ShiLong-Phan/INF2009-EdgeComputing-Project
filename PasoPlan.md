@@ -31,7 +31,7 @@ Pi commands (bash):
   python3 cp2_cp6/paso_system_profile.py --output-csv data/paso/pi_baseline_system.csv --duration-sec 600 --interval-sec 1 --label baseline --process-name edge_event_publisher_pi.py
 
 - Run edge publisher with full PASO event CSV logging enabled:
-  python cp2_cp6/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-baseline --capture-dir captures --sound-file /home/domaniac/Desktop/skool_projekt/INF2009-EdgeComputing-Project/sounds/beep.wav --sound-device plughw:3,0 --min-speed-cm-s 65 --outbox-db-path data/pi_outbox.db --retry-base-sec 2 --max-retry-backoff-sec 60 --max-image-bytes 400000 --paso-log-csv data/paso/pi_edge_events_baseline.csv
+  python cp2_cp6/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-baseline --capture-dir captures --sound-file sounds/beep.wav --min-speed-cm-s 65 --outbox-db-path data/pi_outbox.db --retry-base-sec 2 --max-retry-backoff-sec 60 --max-image-bytes 400000 --paso-log-csv data/paso/pi_edge_events_baseline.csv
 
 Laptop commands (PowerShell):
 - Baseline analysis report:
@@ -50,7 +50,7 @@ Pi commands (bash):
   python3 cp2_cp6/paso_system_profile.py --output-csv data/paso/pi_after_system.csv --duration-sec 600 --interval-sec 1 --label after --process-name edge_event_publisher_pi.py
 
 - Run edge publisher with after CSV logging enabled:
-  python3 cp2_cp6/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-baseline --capture-dir captures --sound-file /home/pi/sounds/beep.wav --sound-device plughw:3,0 --min-speed-cm-s 65 --outbox-db-path data/pi_outbox.db --retry-base-sec 2 --max-retry-backoff-sec 60 --max-image-bytes 400000 --paso-log-csv data/paso/pi_edge_events_after.csv
+  python3 cp2_cp6/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-baseline --capture-dir captures --sound-file sounds/beep.wav --min-speed-cm-s 65 --outbox-db-path data/pi_outbox.db --retry-base-sec 2 --max-retry-backoff-sec 60 --max-image-bytes 400000 --paso-log-csv data/paso/pi_edge_events_after.csv
 
 Laptop commands (PowerShell):
 - After-run analysis report:
