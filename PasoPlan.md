@@ -107,9 +107,10 @@ Priority order:
   2. Variant B in a new file — implement after Variant A is verified.
   3. Trained model swap (shelved) — plug in groupmate's model + labels when ready.
 
-2.2) Trained model swap (SHELVED — groupmate's model from Edge_Model_Refinement.ipynb)
-     Will plug in new .tflite + labels.txt when available. No code changes expected
-     beyond --model-path / --label-path args, unless input size differs from 224×224.
+2.2) Trained model swap (DONE — converted from Edge_Model_Refinement.ipynb)
+     waste_classifier_v1.keras → waste_classifier_v1.tflite (2.42 MB, quantized)
+     Labels: AluCan, Glass, HDPEM, PET (4 classes, all recyclable drinking waste)
+     Input: 224×224×3, same preprocessing as baseline MobileNetV2.
 
 3) Post-change capture and analysis (same duration, same workload)
 
@@ -122,7 +123,7 @@ Pi commands (bash):
   python3 cp2_cp6/paso_system_profile.py --output-csv data/paso/pi_after_system.csv --duration-sec 600 --interval-sec 1 --label after --process-name edge_event_publisher_pi.py
 
 - Run edge publisher with after CSV logging enabled:
-  python3 cp2_cp6/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-after --capture-dir captures --sound-file sounds/beep.wav --min-speed-cm-s 65 --outbox-db-path data/pi_outbox.db --retry-base-sec 2 --max-retry-backoff-sec 60 --max-image-bytes 400000 --bg-threshold 30 --bg-min-area-px 1500 --bg-crop-pad-px 10 --paso-log-csv data/paso/pi_edge_events_after.csv
+  python3 cp2_cp6/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path waste_classifier/waste_classifier_v1.tflite --label-path waste_classifier/labels.txt --edge-model-version waste-classifier-v1 --capture-dir captures --sound-file sounds/beep.wav --min-speed-cm-s 65 --outbox-db-path data/pi_outbox.db --retry-base-sec 2 --max-retry-backoff-sec 60 --max-image-bytes 400000 --recyclable-keywords AluCan,Glass,HDPEM,PET --bg-threshold 30 --bg-min-area-px 1500 --bg-crop-pad-px 10 --paso-log-csv data/paso/pi_edge_events_after.csv
 
 Laptop commands (PowerShell):
 - After-run analysis report:
