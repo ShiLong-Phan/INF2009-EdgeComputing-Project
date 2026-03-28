@@ -20,7 +20,7 @@ One-day practical PASO checklist (before CP8/CP9, then after):
 0) Keep Documentation.md command-free
 - All executable commands are listed in this file only.
 
-1) Baseline capture (no new optimizations yet)
+1) Baseline capture (no new optimizations yet) (done)
 
 Laptop commands (PowerShell):
 - Start system profiler for laptop receiver process:
@@ -56,7 +56,7 @@ Laptop commands (PowerShell):
 - After-run analysis report:
   python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label after --system-csv data/paso/laptop_after_system.csv --pi-system-csv data/paso/pi_after_system.csv --output-md data/paso/after_report.md --output-json data/paso/after_report.json
 
-4) Camera-motion prototype comparison (optional — shows mmWave-trigger vs always-on-camera cost)
+4) Camera-motion prototype comparison (optional — shows mmWave-trigger vs always-on-camera cost) (done)
 
 Pi commands (bash):
 - Start Pi system profiler for polling run:
@@ -73,10 +73,10 @@ Laptop commands (PowerShell):
   python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label polling --system-csv data/paso/laptop_polling_system.csv --pi-system-csv data/paso/pi_polling_system.csv --event-csv data/paso/pi_edge_events_polling.csv --output-md data/paso/polling_report.md --output-json data/paso/polling_report.json
 
 - Compare baseline (mmWave-triggered) vs polling (always-on camera):
-  python cp2_cp6/paso_compare_runs.py --before-json data/paso/baseline_report_filtered.json --after-json data/paso/polling_report.json --output-md data/paso/comparison_polling_vs_baseline.md
+  python cp2_cp6/paso_compare_runs.py --before-json data/paso/baseline_reportd.json --after-json data/paso/polling_report.json --output-md data/paso/comparison_polling_vs_baseline.md
 
 5) Direct baseline vs after comparison (Laptop)
-- python cp2_cp6/paso_compare_runs.py --before-json data/paso/baseline_report_filtered.json --after-json data/paso/after_report.json --output-md data/paso/comparison.md
+- python cp2_cp6/paso_compare_runs.py --before-json data/paso/baseline_report.json --after-json data/paso/after_report.json --output-md data/paso/comparison.md
 
 Scheduling note for report:
 If Scheduling is skipped, justify it with measured CPU/RAM/queue pressure evidence instead of stating Pi 5 is overpowered by assumption.
