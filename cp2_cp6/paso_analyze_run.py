@@ -27,6 +27,10 @@ def normalize_label(value: Optional[str]) -> str:
         return "BOTTLE"
     if "can" in text:
         return "CAN"
+    # Waste classifier model classes.
+    if text == "pet":
+        return "BOTTLE"
+    # glass and hdpem map to UNKNOWN (fall through)
     return "UNKNOWN"
 
 

@@ -127,7 +127,7 @@ Pi commands (bash):
 
 Laptop commands (PowerShell):
 - After-run analysis report:
-  python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label after --system-csv data/paso/laptop_after_system.csv --pi-system-csv data/paso/pi_after_system.csv --output-md data/paso/after_report.md --output-json data/paso/after_report.json
+  python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label after --system-csv data/paso/laptop_after_system.csv --pi-system-csv data/paso/pi_after_system.csv --event-csv data/paso/pi_edge_events_after.csv --output-md data/paso/after_report.md --output-json data/paso/after_report.json
 
 4) Camera-motion prototype comparison (optional — shows mmWave-trigger vs always-on-camera cost) (done)
 
