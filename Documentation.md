@@ -173,9 +173,100 @@ Scope:
 Exit criteria:
 - Dashboard provides enough information for demo and debugging.
 
-### CP7.5 - PASO (Do on MVP before further progress.)
+### CP7.5 - PASO + Optimisations (IMPLEMENTED — done between CP7 and CP8)
 
-TODO: Fill up PASO Plan
+PASO stands for Profile, Analyse, Schedule, Optimise. This was carried out as a
+structured measurement-and-improvement cycle before progressing to CP8.
+
+#### Profiling and baseline capture (done)
+
+System and event metrics were collected over a 300-second window while running the
+full pipeline (mmWave trigger → local inference → MQTT publish → cloud verification)
+using mobilenetv2-baseline. Key results:
+
+- Edge reaction latency (trigger to inference): mean 34 ms, median 33 ms, p95 47 ms.
+- Broker ingest latency (edge to server): mean 1070 ms, median 406 ms, p95 3984 ms.
+- Verification latency (trigger to cloud result): mean 4537 ms, p95 8470 ms.
+- Pi process RSS: ~139 MB. Pi process CPU: mean 3.5%, p95 10%.
+- Identified bottleneck: network and cloud API (phone hotspot + NanoGPT roundtrip).
+  Edge reaction itself was already under 50 ms.
+
+Full baseline data is in data/paso/baseline_report.md and baseline_report.json.
+
+#### Optimisation 1 — Static background frame differencing (Variant A)
+
+Motivation: the raw trigger frame fed to the classifier includes the surrounding
+environment (wall, bin, hands), which degrades accuracy on the custom waste model.
+Frame differencing removes the static background so the model receives only the
+foreground object.
+
+How it works (edge_event_publisher_pi.py):
+1. On startup the publisher captures one reference background frame from the camera
+   and saves it to captures/background.jpg. If a saved background already exists it
+   is loaded instead. Nothing else happens until a trigger fires.
+2. On each mmWave trigger, the trigger frame is first saved as trigger_<ts>.jpg (raw).
+3. Frame differencing pipeline:
+   a. Both background and trigger frames are converted to grayscale and Gaussian-blurred
+      (kernel default 21) to suppress per-pixel noise from camera auto-exposure shifts.
+   b. cv2.absdiff produces an absolute-difference image.
+   c. Binary threshold (default 30) → morphological close → dilate yields a foreground mask.
+   d. The largest contour is found. If its area exceeds bg-min-area-px (default 1500),
+      its bounding rect is cropped with padding from the colour frame and saved as
+      processed_<ts>.jpg.
+   e. If no significant contour is found the full raw frame is used as fallback.
+4. The processed (cropped) image is what is fed to the classifier and published to the
+   cloud, not the raw frame.
+5. PASO log gains a fg_area_px column so crop size can be correlated with accuracy.
+
+New CLI flags on edge_event_publisher_pi.py:
+- --bg-threshold (default 30): binary diff threshold.
+- --bg-min-area-px (default 1500): minimum foreground contour area to accept.
+- --bg-crop-pad-px (default 10): padding around the crop bounding rect.
+- --bg-blur-kernel (default 21): Gaussian blur kernel size before diffing (0 to disable).
+
+Dashboard (dashboard_cp7.py) gains a POST /api/reset-bg/<device_id> endpoint that
+publishes an MQTT command to edge/bg-reset/request/<device_id>. The publisher
+subscribes to this topic and resets the background from the next available camera
+frame. A "Reset Background" button was added to the device detail page in the
+dashboard for this purpose.
+
+#### Optimisation 2 — Custom-trained waste classifier model
+
+Motivation: the original mobilenet_v2_1.0_224.tflite (ImageNet classes) was poor
+at distinguishing cans specifically. Trained a MobileNetV2 fine-tuned
+on the Kaggle "Drinking Waste Classification" dataset (arkadiyhacks) using
+Edge_Model_Refinement.ipynb.
+
+Model details:
+- Base: MobileNetV2 1.00/224, ImageNet weights, backbone frozen.
+- Head: GlobalAveragePooling2D → Dropout(0.3) → Dense(4, softmax).
+- 4 classes: AluCan, Glass, HDPEM, PET.
+- Training: 20 epochs, data augmentation (flip, rotation, brightness), ReduceLROnPlateau.
+- Saved as waste_classifier/waste_classifier_v1.keras (Keras 3, 9.2 MB).
+
+Conversion: the .keras file was converted to TFLite with default quantization using
+TFLiteConverter.from_keras_model(), producing waste_classifier/waste_classifier_v1.tflite
+(2.42 MB). Labels file is waste_classifier/labels.txt (one class per line, alphabetical).
+
+Inference runtime: switched from cv2.dnn.readNet() (which couldn't handle the augmentation
+layer baked into the model) to the TFLite interpreter. Import priority is
+ai_edge_litert → tflite_runtime → tensorflow.lite. Preprocessing is done manually:
+resize to 224×224 → BGR→RGB → scale to [-1, 1] → expand batch dimension.
+
+Label normalisation in dashboard_cp7.py was updated so that the 4 new class names
+map to the two dashboard categories:
+- AluCan → CAN (contains "can" substring, matched automatically).
+- PET, HDPEM, Glass → BOTTLE (added explicit mapping).
+
+Only AluCan and PET trigger the affirmative beep (--recyclable-keywords AluCan,PET).
+Glass and HDPEM are classified and logged but do not beep as they are not target recyclables.
+
+#### Post-optimisation measurement
+
+After-run commands (capturing 300-second window, same workload) are in PasoPlan.md
+section 3. The Pi publisher command uses --model-path waste_classifier/waste_classifier_v1.tflite,
+--edge-model-version waste-classifier-v1, and the new background differencing flags.
+Results will be compared against the baseline using paso_compare_runs.py.
 
 ### CP8 - ML/AI features
 Scope:

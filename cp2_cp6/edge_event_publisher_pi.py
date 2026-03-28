@@ -624,12 +624,35 @@ class EdgePublisherApp:
                                 inference_image = cropped
                                 print(f"[EDGE] Foreground extracted: area={fg_area_px}px crop={cropped.shape[1]}x{cropped.shape[0]}")
                             else:
-                                print(f"[EDGE] No significant foreground detected (area={fg_area_px}px). Using full frame.")
+                                print(f"[EDGE] No significant foreground detected (area={fg_area_px}px). Skipping inference.")
+                                label, confidence = "unknown", 0.0
+                                edge_reaction_ms = (time.perf_counter() - trigger_started) * 1000.0
+                                payload = self.build_event_payload(
+                                    image_ref=raw_file_name,
+                                    label=label,
+                                    confidence=confidence,
+                                    distance_cm=distance_cm,
+                                    speed_cm_s=speed_cm_s,
+                                    edge_reaction_ms=edge_reaction_ms,
+                                )
+                                payload_text = encode_payload(payload)
+                                self.outbox.enqueue(payload["event_id"], payload_text, raw_image_path)
+                                self.append_paso_event_row(payload, fg_area_px=fg_area_px)
+                                print(
+                                    f"[EDGE] Queued (no-fg) event_id={payload['event_id']} label=unknown edge_reaction_ms={payload['edge_reaction_ms']} pending={self.outbox.count_pending()}"
+                                )
+                                self.motion_state = True
+                                continue
 
                         label, confidence = self.run_inference(inference_image)
                         edge_reaction_ms = (time.perf_counter() - trigger_started) * 1000.0
 
-                        if self.is_recyclable(label):
+                        # Gate on confidence: below threshold treat as unknown.
+                        if confidence < self.args.min_confidence:
+                            print(f"[EDGE] Low confidence ({confidence:.3f} < {self.args.min_confidence}). Treating as unknown.")
+                            label = "unknown"
+
+                        if self.is_recyclable(label) and confidence >= self.args.min_confidence:
                             self.play_affirmative_sound()
 
                         payload = self.build_event_payload(
@@ -725,6 +748,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=21,
         help="Gaussian blur kernel size applied before diffing (0 to disable). Odd number. Default: 21.",
+    )
+    parser.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.8,
+        help="Minimum confidence to accept a prediction. Below this, label becomes unknown and no beep. Default: 0.8.",
     )
 
     parser.add_argument("--recyclable-keywords", default="bottle,can,plastic,aluminum,tin")
