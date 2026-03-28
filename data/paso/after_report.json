@@ -1,0 +1,110 @@
+{
+  "label": "after",
+  "db": {
+    "event_count": 50,
+    "verification_status_counts": {
+      "ok": 50
+    },
+    "events_by_device": {
+      "pi-edge-01": 50
+    },
+    "agreement_rate_ok_percent": 78.0,
+    "latency_ms": {
+      "edge_reaction": {
+        "count": 50,
+        "mean": 42.273,
+        "median": 44.295,
+        "p95": 59.617
+      },
+      "broker_ingest": {
+        "count": 50,
+        "mean": 862.664,
+        "median": 285.441,
+        "p95": 2898.126
+      },
+      "image_arrival": {
+        "count": 50,
+        "mean": 891.799,
+        "median": 328.267,
+        "p95": 2911.534
+      },
+      "verification_done": {
+        "count": 50,
+        "mean": 3937.793,
+        "median": 3589.457,
+        "p95": 6228.729
+      }
+    }
+  },
+  "system": {
+    "cpu_percent_total": {
+      "count": 298,
+      "mean": 4.331,
+      "median": 3.15,
+      "p95": 10.615
+    },
+    "mem_percent_total": {
+      "count": 298,
+      "mean": 73.488,
+      "median": 73.5,
+      "p95": 73.6
+    },
+    "power_proxy_score": {
+      "count": 298,
+      "mean": 4.331,
+      "median": 3.15,
+      "p95": 10.615
+    },
+    "proc_cpu_percent": {
+      "count": 298,
+      "mean": 0.0,
+      "median": 0.0,
+      "p95": 0.0
+    },
+    "proc_rss_mb": {
+      "count": 298,
+      "mean": 3.984,
+      "median": 3.984,
+      "p95": 3.984
+    }
+  },
+  "system_pi": {
+    "cpu_percent_total": {
+      "count": 300,
+      "mean": 19.518,
+      "median": 13.9,
+      "p95": 49.51
+    },
+    "mem_percent_total": {
+      "count": 300,
+      "mean": 44.082,
+      "median": 43.9,
+      "p95": 46.9
+    },
+    "power_proxy_score": {
+      "count": 300,
+      "mean": 44.755,
+      "median": 31.8,
+      "p95": 118.824
+    },
+    "proc_cpu_percent": {
+      "count": 300,
+      "mean": 3.633,
+      "median": 3.0,
+      "p95": 6.0
+    },
+    "proc_rss_mb": {
+      "count": 300,
+      "mean": 134.779,
+      "median": 135.016,
+      "p95": 135.016
+    }
+  },
+  "event_filter": {
+    "event_csv": "C:\\Users\\domin\\Desktop\\misc\\INF2009-EdgeComputing-Project\\data\\paso\\pi_edge_events_after.csv",
+    "event_ids_in_csv": 50
+  },
+  "findings": [
+    "Verification latency p95 is high (>2500ms): likely network/cloud bottleneck."
+  ]
+}
