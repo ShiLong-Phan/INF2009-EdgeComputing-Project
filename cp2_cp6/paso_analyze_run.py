@@ -4,9 +4,10 @@ import json
 import math
 import os
 import sqlite3
+import uuid
 from datetime import datetime
 from statistics import mean, median
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 
 def parse_iso(value: Optional[str]) -> Optional[datetime]:
@@ -19,10 +20,12 @@ def parse_iso(value: Optional[str]) -> Optional[datetime]:
 
 
 def normalize_label(value: Optional[str]) -> str:
-    text = (value or "").strip().upper()
-    if text == "BOTTLE":
+    text = (value or "").strip().lower()
+    if not text or text == "unknown":
+        return "UNKNOWN"
+    if "bottle" in text:
         return "BOTTLE"
-    if text == "CAN":
+    if "can" in text:
         return "CAN"
     return "UNKNOWN"
 
@@ -66,12 +69,44 @@ def parse_edge_reaction_ms(raw_payload: str) -> Optional[float]:
         return None
 
 
-def analyze_db(db_path: str) -> Dict:
+def load_event_ids_from_csv(csv_path: str) -> Set[str]:
+    event_ids: Set[str] = set()
+
+    def is_uuid(text: str) -> bool:
+        try:
+            uuid.UUID(text)
+            return True
+        except Exception:
+            return False
+
+    with open(csv_path, "r", encoding="utf-8", newline="") as f:
+        # First try header-aware parsing.
+        f.seek(0)
+        reader_dict = csv.DictReader(f)
+        if reader_dict.fieldnames and "event_id" in reader_dict.fieldnames:
+            for row in reader_dict:
+                event_id = (row.get("event_id") or "").strip()
+                if is_uuid(event_id):
+                    event_ids.add(event_id)
+            return event_ids
+
+        # Fallback for headerless files produced in some runs.
+        f.seek(0)
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) < 2:
+                continue
+            event_id = (row[1] or "").strip()
+            if is_uuid(event_id):
+                event_ids.add(event_id)
+    return event_ids
+
+
+def analyze_db(db_path: str, event_ids: Optional[Set[str]] = None) -> Dict:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
-    rows = conn.execute(
-        """
+    base_sql = """
         SELECT
             event_id,
             device_id,
@@ -85,16 +120,15 @@ def analyze_db(db_path: str) -> Dict:
             raw_payload
         FROM events
         WHERE receive_count >= 1
-        """
-    ).fetchall()
+    """
 
-    status_rows = conn.execute(
-        "SELECT verify_status, COUNT(*) AS c FROM events GROUP BY verify_status"
-    ).fetchall()
-
-    device_rows = conn.execute(
-        "SELECT device_id, COUNT(*) AS c FROM events GROUP BY device_id ORDER BY c DESC"
-    ).fetchall()
+    if event_ids:
+        ordered_ids = sorted(event_ids)
+        placeholders = ",".join(["?"] * len(ordered_ids))
+        sql = base_sql + f" AND event_id IN ({placeholders})"
+        rows = conn.execute(sql, ordered_ids).fetchall()
+    else:
+        rows = conn.execute(base_sql).fetchall()
 
     conn.close()
 
@@ -104,8 +138,15 @@ def analyze_db(db_path: str) -> Dict:
     edge_reaction_ms: List[float] = []
     agree_ok = 0
     agree_total = 0
+    verify_counts: Dict[str, int] = {}
+    device_counts: Dict[str, int] = {}
 
     for row in rows:
+        status = row["verify_status"] or "unknown"
+        device = row["device_id"] or "unknown"
+        verify_counts[status] = verify_counts.get(status, 0) + 1
+        device_counts[device] = device_counts.get(device, 0) + 1
+
         t_edge = parse_iso(row["timestamp_utc"])
         t_first = parse_iso(row["first_seen_utc"])
         t_image = parse_iso(row["image_receive_utc"])
@@ -133,8 +174,8 @@ def analyze_db(db_path: str) -> Dict:
 
     return {
         "event_count": len(rows),
-        "verification_status_counts": {r["verify_status"]: r["c"] for r in status_rows},
-        "events_by_device": {r["device_id"]: r["c"] for r in device_rows},
+        "verification_status_counts": verify_counts,
+        "events_by_device": dict(sorted(device_counts.items(), key=lambda kv: kv[1], reverse=True)),
         "agreement_rate_ok_percent": agreement_rate,
         "latency_ms": {
             "edge_reaction": summarize(edge_reaction_ms),
@@ -253,15 +294,29 @@ def main() -> None:
     parser.add_argument("--db-path", required=True)
     parser.add_argument("--label", default="baseline")
     parser.add_argument("--system-csv", default="")
+    parser.add_argument(
+        "--event-csv",
+        default="",
+        help="Optional Pi event CSV (with event_id column) to restrict analysis to a single run.",
+    )
     parser.add_argument("--output-md", required=True)
     parser.add_argument("--output-json", default="")
     args = parser.parse_args()
 
+    filtered_event_ids: Optional[Set[str]] = None
+    if args.event_csv:
+        filtered_event_ids = load_event_ids_from_csv(args.event_csv)
+
     report = {
         "label": args.label,
-        "db": analyze_db(args.db_path),
+        "db": analyze_db(args.db_path, event_ids=filtered_event_ids),
         "system": analyze_system_csv(args.system_csv) if args.system_csv else {},
     }
+    if filtered_event_ids is not None:
+        report["event_filter"] = {
+            "event_csv": os.path.abspath(args.event_csv),
+            "event_ids_in_csv": len(filtered_event_ids),
+        }
     report["findings"] = build_findings(report)
 
     output_md = os.path.abspath(args.output_md)

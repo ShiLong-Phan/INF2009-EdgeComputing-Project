@@ -1,0 +1,79 @@
+{
+  "label": "baseline_filtered",
+  "db": {
+    "event_count": 33,
+    "verification_status_counts": {
+      "ok": 33
+    },
+    "events_by_device": {
+      "pi-edge-01": 33
+    },
+    "agreement_rate_ok_percent": 63.636,
+    "latency_ms": {
+      "edge_reaction": {
+        "count": 33,
+        "mean": 1143.512,
+        "median": 1552.27,
+        "p95": 1578.676
+      },
+      "broker_ingest": {
+        "count": 33,
+        "mean": 1243.013,
+        "median": 269.958,
+        "p95": 4906.219
+      },
+      "image_arrival": {
+        "count": 33,
+        "mean": 1332.92,
+        "median": 410.504,
+        "p95": 4918.355
+      },
+      "verification_done": {
+        "count": 33,
+        "mean": 4580.287,
+        "median": 3877.013,
+        "p95": 8054.327
+      }
+    }
+  },
+  "system": {
+    "cpu_percent_total": {
+      "count": 298,
+      "mean": 3.743,
+      "median": 2.65,
+      "p95": 10.0
+    },
+    "mem_percent_total": {
+      "count": 298,
+      "mean": 61.014,
+      "median": 60.9,
+      "p95": 61.5
+    },
+    "power_proxy_score": {
+      "count": 298,
+      "mean": 3.743,
+      "median": 2.65,
+      "p95": 10.0
+    },
+    "proc_cpu_percent": {
+      "count": 298,
+      "mean": 0.0,
+      "median": 0.0,
+      "p95": 0.0
+    },
+    "proc_rss_mb": {
+      "count": 298,
+      "mean": 5.045,
+      "median": 5.043,
+      "p95": 5.059
+    }
+  },
+  "event_filter": {
+    "event_csv": "C:\\Users\\domin\\Desktop\\misc\\INF2009-EdgeComputing-Project\\data\\paso\\pi_edge_events_baseline.csv",
+    "event_ids_in_csv": 33
+  },
+  "findings": [
+    "Verification latency p95 is high (>2500ms): likely network/cloud bottleneck.",
+    "Edge reaction p95 is above 300ms: consider capture/inference optimizations."
+  ]
+}
