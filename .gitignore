@@ -1,4 +1,4 @@
 /certs
-/data
 /cp2_cp6/__pycache__
 /captures
+data/pi_outbox.db
