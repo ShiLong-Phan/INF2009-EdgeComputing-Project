@@ -232,11 +232,21 @@ class EdgePublisherApp:
         gray_bg = cv2.cvtColor(self.bg_image, cv2.COLOR_BGR2GRAY)
         gray_fg = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+        # Blur to suppress per-pixel noise from auto-exposure/white-balance shifts.
+        blur_k = self.args.bg_blur_kernel
+        if blur_k > 0:
+            # Ensure odd kernel size.
+            blur_k = blur_k if blur_k % 2 == 1 else blur_k + 1
+            gray_bg = cv2.GaussianBlur(gray_bg, (blur_k, blur_k), 0)
+            gray_fg = cv2.GaussianBlur(gray_fg, (blur_k, blur_k), 0)
+
         diff = cv2.absdiff(gray_bg, gray_fg)
         _, thresh = cv2.threshold(diff, self.args.bg_threshold, 255, cv2.THRESH_BINARY)
 
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        dilated = cv2.dilate(thresh, kernel, iterations=2)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+        # Close to merge nearby blobs, then dilate to fill gaps.
+        morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
+        dilated = cv2.dilate(morph, kernel, iterations=2)
 
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
@@ -709,6 +719,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=10,
         help="Padding (pixels) around the detected bounding rect when cropping. Default: 10.",
+    )
+    parser.add_argument(
+        "--bg-blur-kernel",
+        type=int,
+        default=21,
+        help="Gaussian blur kernel size applied before diffing (0 to disable). Odd number. Default: 21.",
     )
 
     parser.add_argument("--recyclable-keywords", default="bottle,can,plastic,aluminum,tin")

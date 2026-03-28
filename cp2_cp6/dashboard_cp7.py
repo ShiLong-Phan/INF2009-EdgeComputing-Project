@@ -67,6 +67,9 @@ def _normalize_label(label: Optional[str]) -> str:
         return "BOTTLE"
     if "can" in raw:
         return "CAN"
+    # Waste classifier model classes.
+    if raw in ("pet", "hdpem", "glass"):
+        return "BOTTLE"
     return "UNKNOWN"
 
 
