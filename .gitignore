@@ -4,3 +4,4 @@
 data/pi_outbox.db
 *.jpg
 data/edge_events.db
+data/pi_outbox_polling.db
