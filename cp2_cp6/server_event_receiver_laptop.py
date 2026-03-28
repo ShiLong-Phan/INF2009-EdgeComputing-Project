@@ -2,17 +2,12 @@ import argparse
 import os
 import sqlite3
 import ssl
-from datetime import datetime, timezone
 from typing import Optional
 
 import paho.mqtt.client as mqtt
 
-from event_schema import decode_payload, validate_event_payload
+from event_schema import decode_payload, utc_now_iso, validate_event_payload
 from nanogpt_verifier import verify_image
-
-
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def ensure_db(db_path: str) -> None:

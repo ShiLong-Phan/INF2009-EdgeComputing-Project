@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Tuple
 
 REQUIRED_FIELDS = {
@@ -16,10 +16,11 @@ REQUIRED_FIELDS = {
 
 ALLOWED_TRIGGER_MODES = {"inside_bin", "outside_bin"}
 SUPPORTED_PAYLOAD_VERSION = "1.0"
+GMT_PLUS_8 = timezone(timedelta(hours=8))
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(GMT_PLUS_8).isoformat()
 
 
 def validate_event_payload(payload: Dict[str, Any]) -> Tuple[bool, str]:

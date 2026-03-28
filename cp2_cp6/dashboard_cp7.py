@@ -6,11 +6,13 @@ import ssl
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 import paho.mqtt.client as mqtt
 from flask import Flask, abort, jsonify, render_template, send_file
+
+from event_schema import utc_now_iso
 
 
 DEFAULT_DB_PATH = "data/edge_events.db"
@@ -19,6 +21,7 @@ DEFAULT_BROKER_PORT = 8883
 DEFAULT_PING_REQUEST_TOPIC_PREFIX = "edge/ping/request"
 DEFAULT_PING_RESPONSE_TOPIC_PREFIX = "edge/ping/response"
 DEFAULT_PING_TIMEOUT_SEC = 3.0
+GMT_PLUS_8 = timezone(timedelta(hours=8))
 
 
 def _resolve_existing_image_path(image_path: str, db_path: str) -> Optional[str]:
@@ -216,14 +219,14 @@ def _parse_utc_iso(ts: Optional[str]) -> Optional[datetime]:
         normalized = ts.replace("Z", "+00:00")
         parsed = datetime.fromisoformat(normalized)
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+            parsed = parsed.replace(tzinfo=GMT_PLUS_8)
+        return parsed.astimezone(GMT_PLUS_8)
     except ValueError:
         return None
 
 
 def _attach_presence(devices: List[Dict[str, object]], online_window_sec: int) -> List[Dict[str, object]]:
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(GMT_PLUS_8)
     result: List[Dict[str, object]] = []
 
     for device in devices:
@@ -275,7 +278,7 @@ def _ping_device_over_mqtt(app: Flask, device_id: str) -> Tuple[bool, Dict[str, 
             return
         _client.subscribe(response_topic, qos=1)
 
-        payload = json.dumps({"request_id": request_id, "timestamp_utc": datetime.now(timezone.utc).isoformat()})
+        payload = json.dumps({"request_id": request_id, "timestamp_utc": utc_now_iso()})
         _client.publish(request_topic, payload=payload, qos=1, retain=False)
 
     def on_message(_client, _userdata, msg: mqtt.MQTTMessage) -> None:
