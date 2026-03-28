@@ -17,6 +17,14 @@ import numpy as np
 import paho.mqtt.client as mqtt
 import serial
 
+try:
+    from ai_edge_litert.interpreter import Interpreter as TFLiteInterpreter
+except ImportError:
+    try:
+        from tflite_runtime.interpreter import Interpreter as TFLiteInterpreter
+    except ImportError:
+        from tensorflow.lite.python.interpreter import Interpreter as TFLiteInterpreter
+
 from event_schema import SUPPORTED_PAYLOAD_VERSION, encode_payload, utc_now_iso
 from pi_outbox import PiOutbox
 
@@ -47,7 +55,9 @@ class EdgePublisherApp:
         self.motion_state = False
         self.serial_buffer = bytearray()
         self.last_trigger_monotonic = 0.0
-        self.net = None
+        self.interpreter = None
+        self.input_details = None
+        self.output_details = None
         self.labels = []
         self.connected = False
         self.outbox = PiOutbox(self.args.outbox_db_path)
@@ -170,8 +180,11 @@ class EdgePublisherApp:
         with open(self.args.label_path, "r", encoding="utf-8") as label_file:
             self.labels = [line.strip() for line in label_file if line.strip()]
 
-        self.net = cv2.dnn.readNet(self.args.model_path)
-        print(f"[EDGE] Loaded model: {self.args.model_path}")
+        self.interpreter = TFLiteInterpreter(model_path=self.args.model_path)
+        self.interpreter.allocate_tensors()
+        self.input_details = self.interpreter.get_input_details()
+        self.output_details = self.interpreter.get_output_details()
+        print(f"[EDGE] Loaded TFLite model: {self.args.model_path}")
 
     def capture_background(self, cap: Optional[cv2.VideoCapture] = None, frame: Optional[np.ndarray] = None) -> bool:
         """Capture and save a background reference image. Supply either a VideoCapture or a frame."""
@@ -248,23 +261,25 @@ class EdgePublisherApp:
         return cropped, area
 
     def run_inference(self, frame: np.ndarray) -> Tuple[str, float]:
-        if self.net is None:
+        if self.interpreter is None:
             return "unknown", 0.0
 
-        blob = cv2.dnn.blobFromImage(
-            frame,
-            scalefactor=1.0 / 127.5,
-            size=(224, 224),
-            mean=(127.5, 127.5, 127.5),
-            swapRB=True,
-            crop=False,
-        )
-        self.net.setInput(blob)
-        pred = self.net.forward()
-        pred = np.asarray(pred)
+        # Resize to model input size.
+        img = cv2.resize(frame, (224, 224))
+        # Convert BGR -> RGB.
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # MobileNetV2 preprocessing: scale to [-1, 1].
+        img = (img.astype(np.float32) / 127.5) - 1.0
+        # Add batch dimension: (1, 224, 224, 3).
+        input_data = np.expand_dims(img, axis=0)
+
+        self.interpreter.set_tensor(self.input_details[0]["index"], input_data)
+        self.interpreter.invoke()
+        pred = self.interpreter.get_tensor(self.output_details[0]["index"])
+        pred = np.asarray(pred).reshape(-1)
 
         top_idx = int(np.argmax(pred))
-        confidence = float(pred.reshape(-1)[top_idx])
+        confidence = float(pred[top_idx])
         label = self.labels[top_idx] if top_idx < len(self.labels) else f"class_{top_idx}"
 
         return label, max(0.0, min(1.0, confidence))
