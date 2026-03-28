@@ -223,6 +223,14 @@ New CLI flags on edge_event_publisher_pi.py:
 - --bg-min-area-px (default 1500): minimum foreground contour area to accept.
 - --bg-crop-pad-px (default 10): padding around the crop bounding rect.
 - --bg-blur-kernel (default 21): Gaussian blur kernel size before diffing (0 to disable).
+- --min-confidence (default 0.8): confidence gate — if the top class score is below this
+  threshold the prediction is overridden to "unknown" and no beep is triggered. Suppresses
+  false positives when the sensor fires but no clear object is present.
+
+False-positive handling: if frame differencing finds no contour above bg-min-area-px,
+inference is skipped entirely. The event is logged as unknown/0.0 and the loop continues
+without beeping. This is the primary guard against spurious triggers (e.g. hand waving
+near the sensor without holding an item).
 
 Dashboard (dashboard_cp7.py) gains a POST /api/reset-bg/<device_id> endpoint that
 publishes an MQTT command to edge/bg-reset/request/<device_id>. The publisher
@@ -253,13 +261,19 @@ layer baked into the model) to the TFLite interpreter. Import priority is
 ai_edge_litert → tflite_runtime → tensorflow.lite. Preprocessing is done manually:
 resize to 224×224 → BGR→RGB → scale to [-1, 1] → expand batch dimension.
 
-Label normalisation in dashboard_cp7.py was updated so that the 4 new class names
-map to the two dashboard categories:
+Label normalisation in dashboard_cp7.py (_normalize_label) and paso_analyze_run.py
+(normalize_label) map the 4 model classes to dashboard categories:
 - AluCan → CAN (contains "can" substring, matched automatically).
-- PET, HDPEM, Glass → BOTTLE (added explicit mapping).
+- PET → BOTTLE (bottle-shaped recyclable; target for beep).
+- Glass → UNKNOWN (not a campaign-target recyclable in this deployment).
+- HDPEM → UNKNOWN (same rationale as Glass).
+
+> **[OUTDATED — superseded]** Previously Glass and HDPEM were mapped to BOTTLE.
+> Changed because they are not recyclables targeted by this bin campaign and should
+> not count as verified recyclable detections or trigger agreement in analysis.
 
 Only AluCan and PET trigger the affirmative beep (--recyclable-keywords AluCan,PET).
-Glass and HDPEM are classified and logged but do not beep as they are not target recyclables.
+Glass and HDPEM are logged as UNKNOWN and do not beep.
 
 #### Post-optimisation measurement
 

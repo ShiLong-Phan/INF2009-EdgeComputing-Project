@@ -109,7 +109,7 @@ Priority order:
 
 2.2) Trained model swap (DONE — converted from Edge_Model_Refinement.ipynb)
      waste_classifier_v1.keras → waste_classifier_v1.tflite (2.42 MB, quantized)
-     Labels: AluCan, Glass, HDPEM, PET (4 classes, all recyclable drinking waste)
+     Labels: AluCan, Glass, HDPEM, PET (4 model classes; AluCan+PET are target recyclables, Glass+HDPEM logged as UNKNOWN)
      Input: 224×224×3, same preprocessing as baseline MobileNetV2.
 
 3) Post-change capture and analysis (same duration, same workload)
