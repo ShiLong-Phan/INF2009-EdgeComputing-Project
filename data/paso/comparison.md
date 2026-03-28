@@ -12,4 +12,4 @@
 
 ## Notes
 - Negative delta is good for latency/resource metrics.
-- Positive delta is good for agreement rate.
+- Positive delta is good for agreement rate. 
