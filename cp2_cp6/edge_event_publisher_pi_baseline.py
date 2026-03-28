@@ -37,9 +37,6 @@ TRIGGER_PROFILES = {
 }
 
 
-BG_RESET_TOPIC_PREFIX = "edge/bg-reset/request"
-
-
 class EdgePublisherApp:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
@@ -52,9 +49,6 @@ class EdgePublisherApp:
         self.connected = False
         self.outbox = PiOutbox(self.args.outbox_db_path)
         self.paso_log_csv = os.path.abspath(self.args.paso_log_csv) if self.args.paso_log_csv else ""
-        self.bg_image: Optional[np.ndarray] = None
-        self.bg_image_path = os.path.join(os.path.abspath(self.args.capture_dir), "background.jpg")
-        self._bg_reset_requested = False
 
         os.makedirs(self.args.capture_dir, exist_ok=True)
         if self.paso_log_csv:
@@ -72,7 +66,6 @@ class EdgePublisherApp:
                             "edge_pred_label",
                             "edge_confidence",
                             "outbox_pending",
-                            "fg_area_px",
                         ]
                     )
 
@@ -173,80 +166,6 @@ class EdgePublisherApp:
         self.net = cv2.dnn.readNet(self.args.model_path)
         print(f"[EDGE] Loaded model: {self.args.model_path}")
 
-    def capture_background(self, cap: Optional[cv2.VideoCapture] = None, frame: Optional[np.ndarray] = None) -> bool:
-        """Capture and save a background reference image. Supply either a VideoCapture or a frame."""
-        if frame is None and cap is not None:
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                print("[EDGE] Failed to capture background frame from camera.")
-                return False
-
-        if frame is None:
-            print("[EDGE] No frame available for background capture.")
-            return False
-
-        # Resize to match configured capture resolution.
-        h, w = frame.shape[:2]
-        if w != self.args.frame_width or h != self.args.frame_height:
-            frame = cv2.resize(frame, (self.args.frame_width, self.args.frame_height))
-
-        cv2.imwrite(self.bg_image_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        self.bg_image = frame.copy()
-        print(f"[EDGE] Background captured and saved to {self.bg_image_path}")
-        return True
-
-    def load_background(self) -> bool:
-        """Load an existing background image from disk."""
-        if os.path.exists(self.bg_image_path):
-            img = cv2.imread(self.bg_image_path)
-            if img is not None:
-                h, w = img.shape[:2]
-                if w != self.args.frame_width or h != self.args.frame_height:
-                    img = cv2.resize(img, (self.args.frame_width, self.args.frame_height))
-                self.bg_image = img
-                print(f"[EDGE] Background loaded from {self.bg_image_path}")
-                return True
-        return False
-
-    def extract_foreground(self, frame: np.ndarray) -> Tuple[Optional[np.ndarray], int]:
-        """Use frame differencing against bg_image to isolate the foreground object.
-
-        Returns (cropped_color_image_or_None, foreground_area_px).
-        """
-        if self.bg_image is None:
-            return None, 0
-
-        gray_bg = cv2.cvtColor(self.bg_image, cv2.COLOR_BGR2GRAY)
-        gray_fg = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        diff = cv2.absdiff(gray_bg, gray_fg)
-        _, thresh = cv2.threshold(diff, self.args.bg_threshold, 255, cv2.THRESH_BINARY)
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        dilated = cv2.dilate(thresh, kernel, iterations=2)
-
-        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return None, 0
-
-        largest = max(contours, key=cv2.contourArea)
-        area = int(cv2.contourArea(largest))
-
-        if area < self.args.bg_min_area_px:
-            return None, area
-
-        x, y, w, h = cv2.boundingRect(largest)
-        # Add small padding, clamped to frame bounds.
-        pad = self.args.bg_crop_pad_px
-        fh, fw = frame.shape[:2]
-        x1 = max(0, x - pad)
-        y1 = max(0, y - pad)
-        x2 = min(fw, x + w + pad)
-        y2 = min(fh, y + h + pad)
-
-        cropped = frame[y1:y2, x1:x2]
-        return cropped, area
-
     def run_inference(self, frame: np.ndarray) -> Tuple[str, float]:
         if self.net is None:
             return "unknown", 0.0
@@ -341,7 +260,6 @@ class EdgePublisherApp:
             self.connected = True
             print("[EDGE] Connected to MQTT broker.")
             client.subscribe(f"{self.args.ping_request_topic_prefix.rstrip('/')}/{self.args.device_id}", qos=1)
-            client.subscribe(f"{BG_RESET_TOPIC_PREFIX.rstrip('/')}/{self.args.device_id}", qos=1)
         else:
             self.connected = False
             print(f"[EDGE] MQTT connection failed: reason_code={reason_code}")
@@ -351,13 +269,6 @@ class EdgePublisherApp:
         print(f"[EDGE] Disconnected from MQTT broker: reason_code={reason_code}")
 
     def on_message(self, client, _userdata, msg: mqtt.MQTTMessage) -> None:
-        # Handle background reset command.
-        bg_reset_topic = f"{BG_RESET_TOPIC_PREFIX.rstrip('/')}/{self.args.device_id}"
-        if msg.topic == bg_reset_topic:
-            print("[EDGE] Background reset requested via MQTT.")
-            self._bg_reset_requested = True
-            return
-
         expected_topic = f"{self.args.ping_request_topic_prefix.rstrip('/')}/{self.args.device_id}"
         if msg.topic != expected_topic:
             return
@@ -404,7 +315,7 @@ class EdgePublisherApp:
             "edge_reaction_ms": round(edge_reaction_ms, 2),
         }
 
-    def append_paso_event_row(self, payload: dict, fg_area_px: int = 0) -> None:
+    def append_paso_event_row(self, payload: dict) -> None:
         if not self.paso_log_csv:
             return
 
@@ -420,7 +331,6 @@ class EdgePublisherApp:
                     payload.get("edge_pred_label", ""),
                     payload.get("edge_confidence", ""),
                     self.outbox.count_pending(),
-                    fg_area_px,
                 ]
             )
 
@@ -503,13 +413,6 @@ class EdgePublisherApp:
         if not cap.isOpened():
             raise RuntimeError("Could not open camera device")
 
-        # Capture background on startup for frame differencing.
-        if not self.load_background():
-            print("[EDGE] No existing background found. Capturing fresh background on startup.")
-            self.capture_background(cap=cap)
-        else:
-            print("[EDGE] Loaded existing background image.")
-
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         client.on_connect = self.on_connect
         client.on_disconnect = self.on_disconnect
@@ -540,14 +443,6 @@ class EdgePublisherApp:
                 if ret:
                     latest_camera_frame = camera_frame
 
-                # Handle background reset request from dashboard.
-                if self._bg_reset_requested:
-                    self._bg_reset_requested = False
-                    if latest_camera_frame is not None:
-                        self.capture_background(frame=latest_camera_frame.copy())
-                    else:
-                        self.capture_background(cap=cap)
-
                 latest = None
                 while True:
                     frame = self.read_mmwave_frame(ser)
@@ -577,38 +472,19 @@ class EdgePublisherApp:
                             continue
 
                         image = latest_camera_frame.copy()
-                        ts_str = datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')
 
-                        # Save raw trigger frame.
-                        raw_file_name = f"trigger_{ts_str}.jpg"
-                        raw_image_path = os.path.join(self.args.capture_dir, raw_file_name)
-                        cv2.imwrite(raw_image_path, image, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                        file_name = f"trigger_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
+                        image_path = os.path.join(self.args.capture_dir, file_name)
+                        cv2.imwrite(image_path, image, [cv2.IMWRITE_JPEG_QUALITY, 80])
 
-                        # Frame differencing: extract foreground.
-                        fg_area_px = 0
-                        inference_image = image
-                        processed_file_name = raw_file_name  # fallback if no bg
-                        processed_image_path = raw_image_path
-
-                        if self.bg_image is not None:
-                            cropped, fg_area_px = self.extract_foreground(image)
-                            if cropped is not None and cropped.size > 0:
-                                processed_file_name = f"processed_{ts_str}.jpg"
-                                processed_image_path = os.path.join(self.args.capture_dir, processed_file_name)
-                                cv2.imwrite(processed_image_path, cropped, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                                inference_image = cropped
-                                print(f"[EDGE] Foreground extracted: area={fg_area_px}px crop={cropped.shape[1]}x{cropped.shape[0]}")
-                            else:
-                                print(f"[EDGE] No significant foreground detected (area={fg_area_px}px). Using full frame.")
-
-                        label, confidence = self.run_inference(inference_image)
+                        label, confidence = self.run_inference(image)
                         edge_reaction_ms = (time.perf_counter() - trigger_started) * 1000.0
 
                         if self.is_recyclable(label):
                             self.play_affirmative_sound()
 
                         payload = self.build_event_payload(
-                            image_ref=processed_file_name,
+                            image_ref=file_name,
                             label=label,
                             confidence=confidence,
                             distance_cm=distance_cm,
@@ -616,10 +492,10 @@ class EdgePublisherApp:
                             edge_reaction_ms=edge_reaction_ms,
                         )
                         payload_text = encode_payload(payload)
-                        self.outbox.enqueue(payload["event_id"], payload_text, processed_image_path)
-                        self.append_paso_event_row(payload, fg_area_px=fg_area_px)
+                        self.outbox.enqueue(payload["event_id"], payload_text, image_path)
+                        self.append_paso_event_row(payload)
                         print(
-                            f"[EDGE] Queued event_id={payload['event_id']} label={payload['edge_pred_label']} conf={payload['edge_confidence']} edge_reaction_ms={payload['edge_reaction_ms']} fg_area_px={fg_area_px} pending={self.outbox.count_pending()}"
+                            f"[EDGE] Queued event_id={payload['event_id']} label={payload['edge_pred_label']} conf={payload['edge_confidence']} edge_reaction_ms={payload['edge_reaction_ms']} pending={self.outbox.count_pending()}"
                         )
 
                     self.motion_state = True
@@ -676,25 +552,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--label-path", default="labels.txt")
     parser.add_argument("--edge-model-version", default="mobilenetv2-baseline")
     parser.add_argument("--capture-dir", default="captures")
-
-    parser.add_argument(
-        "--bg-threshold",
-        type=int,
-        default=30,
-        help="Binary threshold for background subtraction diff (0-255). Default: 30.",
-    )
-    parser.add_argument(
-        "--bg-min-area-px",
-        type=int,
-        default=1500,
-        help="Minimum foreground contour area (pixels) to accept as a valid object. Default: 1500.",
-    )
-    parser.add_argument(
-        "--bg-crop-pad-px",
-        type=int,
-        default=10,
-        help="Padding (pixels) around the detected bounding rect when cropping. Default: 10.",
-    )
 
     parser.add_argument("--recyclable-keywords", default="bottle,can,plastic,aluminum,tin")
     parser.add_argument("--sound-file", default="")

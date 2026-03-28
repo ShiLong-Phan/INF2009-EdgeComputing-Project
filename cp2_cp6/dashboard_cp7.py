@@ -407,6 +407,48 @@ def create_app(db_path: str) -> Flask:
             return jsonify(payload), 504
         return jsonify(payload), 500
 
+    @app.post("/api/reset-bg/<device_id>")
+    def api_reset_bg(device_id: str):
+        """Publish an MQTT command telling the Pi to recapture its background image."""
+        bg_topic = f"edge/bg-reset/request/{device_id}"
+        result: Dict[str, object] = {"ok": False, "device_id": device_id}
+
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        try:
+            ca_cert = (app.config.get("CA_CERT") or "").strip()
+            client_cert = (app.config.get("CLIENT_CERT") or "").strip()
+            client_key = (app.config.get("CLIENT_KEY") or "").strip()
+
+            if ca_cert and client_cert and client_key:
+                client.tls_set(
+                    ca_certs=ca_cert,
+                    certfile=client_cert,
+                    keyfile=client_key,
+                    cert_reqs=ssl.CERT_REQUIRED,
+                    tls_version=ssl.PROTOCOL_TLS_CLIENT,
+                )
+                if app.config.get("INSECURE"):
+                    client.tls_insecure_set(True)
+
+            client.connect(app.config["BROKER_HOST"], int(app.config["BROKER_PORT"]), keepalive=10)
+            client.loop_start()
+            payload = json.dumps({"command": "reset_background", "timestamp_utc": utc_now_iso()})
+            info = client.publish(bg_topic, payload=payload, qos=1, retain=False)
+            info.wait_for_publish(timeout=5.0)
+            result["ok"] = True
+        except Exception as ex:
+            result["error"] = str(ex)
+        finally:
+            client.loop_stop()
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+
+        if result.get("ok"):
+            return jsonify(result), 200
+        return jsonify(result), 500
+
     @app.route("/device/<device_id>")
     def dashboard_device(device_id: str):
         rows = _load_events(app.config["DB_PATH"], device_id=device_id)

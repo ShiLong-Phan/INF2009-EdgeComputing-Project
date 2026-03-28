@@ -12,6 +12,9 @@
     Active window: {{ online_window_sec }}s.
     <button type="button" class="ping-btn" onclick="pingDevice('{{ device_id }}', this)">Ping Device</button>
     <span class="ping-result" aria-live="polite"></span>
+    &nbsp;
+    <button type="button" class="ping-btn" onclick="resetBackground('{{ device_id }}', this)">Reset Background</button>
+    <span class="bg-result" aria-live="polite"></span>
   </p>
 </section>
 
@@ -104,6 +107,33 @@
       }
     } catch (_err) {
       resultEl.textContent = "Ping failed";
+      resultEl.classList.add("ping-fail");
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
+  async function resetBackground(deviceId, button) {
+    const resultEl = button.nextElementSibling;
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = "Sending...";
+    resultEl.textContent = "";
+    resultEl.className = "bg-result";
+
+    try {
+      const response = await fetch(`/api/reset-bg/${encodeURIComponent(deviceId)}`, { method: "POST" });
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        resultEl.textContent = "Background reset sent";
+        resultEl.classList.add("ping-ok");
+      } else {
+        resultEl.textContent = `Failed (${payload.error || "error"})`;
+        resultEl.classList.add("ping-fail");
+      }
+    } catch (_err) {
+      resultEl.textContent = "Request failed";
       resultEl.classList.add("ping-fail");
     } finally {
       button.disabled = false;

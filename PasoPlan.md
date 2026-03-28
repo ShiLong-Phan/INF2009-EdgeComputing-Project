@@ -37,7 +37,79 @@ Laptop commands (PowerShell):
 - Baseline analysis report:
   python cp2_cp6/paso_analyze_run.py --db-path data/edge_events.db --label baseline --system-csv data/paso/laptop_baseline_system.csv --pi-system-csv data/paso/pi_baseline_system.csv --output-md data/paso/baseline_report.md --output-json data/paso/baseline_report.json
 
-2) Implement CP8/CP9 improvements.
+2) Implement Optimizations:
+
+2.1) Frame differencing — isolate object from background before inference
+
+Goal: Instead of feeding the raw camera frame (which includes bin interior / wall /
+surroundings) to the classifier, subtract a known background image so the model sees
+only the recyclable item on a clean (black/neutral) canvas. This should improve
+classification accuracy without meaningful latency cost (~2-5 ms of OpenCV ops).
+
+Two variants, matching the two physical mounts for the demo:
+
+--- Variant A: Static background (outside-bin, PRIORITY) ---
+
+Scenario: Pi is mounted outside the bin facing a plain wall. User holds up an object,
+waves to trigger mmWave, gets result, removes object. The wall never changes.
+
+Implementation (modify edge_event_publisher_pi.py directly):
+  a) New CLI flag: --bg-image <path>
+     - On startup, if the file exists, load it as the reference background (BGR, same
+       resolution as capture). If it does not exist yet, the first captured frame is
+       saved to that path and used as the background.
+  b) New CLI flag: --bg-capture-on-start (optional convenience)
+     - If set, discard any existing bg-image file, capture a fresh frame on startup
+       and save it. Useful when the Pi is re-mounted in a slightly different position.
+  c) Dashboard "Capture Background" button (stretch — implement if time permits):
+     - POST endpoint on the Pi or an MQTT command from the dashboard that tells the
+       publisher to overwrite the bg-image file with the current camera frame.
+  d) Preprocessing in the trigger path (between image capture and run_inference):
+     1. Convert both background and trigger frame to grayscale.
+     2. cv2.absdiff → threshold (binary, ~30-40) → dilate to fill gaps → mask.
+     3. Find contours on the mask, take the bounding rect of the largest contour.
+     4. Crop the trigger frame (colour, not grayscale) to that bounding rect.
+     5. Resize crop to model input size (224×224) and feed to run_inference.
+     6. If no significant foreground is detected (contour area < min threshold),
+        skip inference and log "no object detected" — avoids wasting cycles.
+  e) Save both the raw trigger frame AND the cropped/masked image to capture_dir
+     so we can visually verify quality during the demo and in PASO analysis.
+  f) PASO log: add a column "fg_area_px" (foreground pixel count) so we can
+     correlate crop size with accuracy in the after-run report.
+
+Testing checklist (before demo):
+  - Run with --bg-image bg.jpg on laptop webcam (no mmWave needed) to verify
+    crop quality visually.
+  - Confirm edge_reaction_ms stays under ~50 ms with the extra preprocessing.
+  - Confirm PASO CSV and outbox still work correctly.
+
+--- Variant B: Dynamic background (inside-bin, separate file) ---
+
+Scenario: Pi is mounted above the bin looking down. Each toss adds to the pile.
+Background = whatever was in the bin before the latest toss.
+
+Implementation (new file: edge_event_publisher_pi_dynamic_bg.py):
+  a) On startup, capture the first frame as the initial background.
+  b) On each trigger:
+     1. Diff the new frame against the stored background (same steps d.1-d.6 above).
+     2. Run inference on the cropped foreground.
+     3. AFTER inference and publishing, update the stored background to the current
+        frame (post-toss state of the bin). This means the next trigger will diff
+        against the bin-with-all-previous-items, isolating only the newly added one.
+  c) Edge case: if the diff produces no significant contour (e.g. the item landed
+     in exactly the same spot as the background frame), fall back to full-frame
+     inference and log a warning.
+  d) Stretch: periodic background refresh (every N seconds with no trigger) to
+     handle lighting drift.
+
+Priority order:
+  1. Variant A in edge_event_publisher_pi.py — get this working and measured first.
+  2. Variant B in a new file — implement after Variant A is verified.
+  3. Trained model swap (shelved) — plug in groupmate's model + labels when ready.
+
+2.2) Trained model swap (SHELVED — groupmate's model from Edge_Model_Refinement.ipynb)
+     Will plug in new .tflite + labels.txt when available. No code changes expected
+     beyond --model-path / --label-path args, unless input size differs from 224×224.
 
 3) Post-change capture and analysis (same duration, same workload)
 
@@ -50,7 +122,7 @@ Pi commands (bash):
   python3 cp2_cp6/paso_system_profile.py --output-csv data/paso/pi_after_system.csv --duration-sec 600 --interval-sec 1 --label after --process-name edge_event_publisher_pi.py
 
 - Run edge publisher with after CSV logging enabled:
-  python3 cp2_cp6/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-baseline --capture-dir captures --sound-file sounds/beep.wav --min-speed-cm-s 65 --outbox-db-path data/pi_outbox.db --retry-base-sec 2 --max-retry-backoff-sec 60 --max-image-bytes 400000 --paso-log-csv data/paso/pi_edge_events_after.csv
+  python3 cp2_cp6/edge_event_publisher_pi.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --device-id pi-edge-01 --trigger-mode inside_bin --ca-cert certs/ca.crt --client-cert certs/pi-client.crt --client-key certs/pi-client.key --model-path mobilenet_v2_1.0_224.tflite --label-path labels.txt --edge-model-version mobilenetv2-after --capture-dir captures --sound-file sounds/beep.wav --min-speed-cm-s 65 --outbox-db-path data/pi_outbox.db --retry-base-sec 2 --max-retry-backoff-sec 60 --max-image-bytes 400000 --bg-threshold 30 --bg-min-area-px 1500 --bg-crop-pad-px 10 --paso-log-csv data/paso/pi_edge_events_after.csv
 
 Laptop commands (PowerShell):
 - After-run analysis report:
