@@ -39,6 +39,7 @@ def ensure_db(db_path: str) -> None:
                 verify_confidence REAL,
                 verify_error TEXT,
                 verify_raw_text TEXT,
+                verify_done_utc TEXT,
                 image_path TEXT,
                 image_status TEXT NOT NULL DEFAULT 'pending',
                 image_receive_utc TEXT
@@ -49,6 +50,7 @@ def ensure_db(db_path: str) -> None:
             "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp_utc)"
         )
         _ensure_column(conn, "events", "verify_raw_text", "TEXT")
+        _ensure_column(conn, "events", "verify_done_utc", "TEXT")
         _ensure_column(conn, "events", "image_path", "TEXT")
         _ensure_column(conn, "events", "image_status", "TEXT NOT NULL DEFAULT 'pending'")
         _ensure_column(conn, "events", "image_receive_utc", "TEXT")
@@ -177,6 +179,7 @@ def mark_verify_result(
     error_text: Optional[str],
     raw_text: Optional[str],
 ) -> None:
+    now_iso = utc_now_iso()
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             """
@@ -185,7 +188,9 @@ def mark_verify_result(
                 verify_label = ?,
                 verify_confidence = ?,
                 verify_error = ?,
-                verify_raw_text = ?
+                verify_raw_text = ?,
+                verify_done_utc = ?,
+                last_seen_utc = ?
             WHERE event_id = ?
             """,
             (
@@ -194,6 +199,8 @@ def mark_verify_result(
                 confidence,
                 error_text,
                 raw_text,
+                now_iso,
+                now_iso,
                 event_id,
             ),
         )

@@ -109,6 +109,10 @@ Set API key (optional for full verify, can be omitted and receiver will mark `sk
 $env:NANOGPT_API_KEY = "<YOUR_API_KEY>"
 ```
 
+''' CMD
+set NANOGPT_API_KEY=your_actual_key_here
+'''
+
 Run receiver (Terminal 2):
 
 ```powershell
@@ -178,7 +182,7 @@ pip install -r cp2_cp6/requirements-pi.txt
 ## 7) Run Pi 1 Publisher
 
 ```bash
-source .venv-cp2-pi/bin/activate
+source venv/bin/activate
 python3 cp2_cp6/edge_event_publisher_pi.py \
   --broker-host DOMCOM2 \
   --broker-port 8883 \
