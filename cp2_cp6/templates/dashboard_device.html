@@ -34,7 +34,7 @@
       </li>
       {% endfor %}
     </ol>
-    <p class="hint">BOTTLE/CAN are listed only when cloud-confirmed. Non-confirmed bottle/can results are grouped as MISMATCH.</p>
+    <p class="hint">UNKNOWN means edge predicted non-bottle/can and cloud also returned UNKNOWN. All other disagreements or non-ok verification are MISMATCH.</p>
   </article>
 
   <article class="panel">
@@ -45,6 +45,7 @@
 
 <section class="panel">
   <h3>Latest Requests for {{ device_id }}</h3>
+  <p class="hint">Showing latest {{ latest_limit }} rows. Use Load 20 more (max 200).</p>
   <table>
     <thead>
       <tr>
@@ -77,6 +78,9 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if latest_limit < 200 %}
+  <button type="button" class="ping-btn" onclick="loadMoreRows(20)">Load 20 more</button>
+  {% endif %}
 </section>
 
 <script>
@@ -105,6 +109,14 @@
       button.disabled = false;
       button.textContent = original;
     }
+  }
+
+  function loadMoreRows(increment) {
+    const url = new URL(window.location.href);
+    const current = parseInt(url.searchParams.get("limit") || "{{ latest_limit }}", 10);
+    const next = Math.min(current + increment, 200);
+    url.searchParams.set("limit", String(next));
+    window.location.href = url.toString();
   }
 
   const labels = {{ chart_labels|safe }};

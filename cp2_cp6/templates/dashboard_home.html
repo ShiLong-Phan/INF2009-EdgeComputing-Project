@@ -60,6 +60,7 @@
 
 <section class="panel">
   <h2>Latest Requests</h2>
+  <p class="hint">Showing latest {{ latest_limit }} rows. Use Load 20 more (max 200).</p>
   <table>
     <thead>
       <tr>
@@ -92,6 +93,9 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if latest_limit < 200 %}
+  <button type="button" class="ping-btn" onclick="loadMoreRows(20)">Load 20 more</button>
+  {% endif %}
 </section>
 
 <script>
@@ -120,6 +124,14 @@
       button.disabled = false;
       button.textContent = original;
     }
+  }
+
+  function loadMoreRows(increment) {
+    const url = new URL(window.location.href);
+    const current = parseInt(url.searchParams.get("limit") || "{{ latest_limit }}", 10);
+    const next = Math.min(current + increment, 200);
+    url.searchParams.set("limit", String(next));
+    window.location.href = url.toString();
   }
 </script>
 {% endblock %}

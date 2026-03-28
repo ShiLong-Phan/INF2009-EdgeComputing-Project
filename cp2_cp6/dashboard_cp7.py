@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 import paho.mqtt.client as mqtt
-from flask import Flask, abort, jsonify, render_template, send_file
+from flask import Flask, abort, jsonify, render_template, request, send_file
 
 from event_schema import utc_now_iso
 
@@ -149,15 +149,22 @@ def _scan_mix(rows: List[sqlite3.Row]) -> List[Dict[str, object]]:
         verify_status = (row["verify_status"] or "").strip().lower()
         cloud_label = _normalize_label(row["verify_label"])
 
-        # For chart/list reporting, bottle/can must be cloud-confirmed; otherwise mark mismatch.
+        # Mismatch covers non-ok verification and any edge/cloud disagreement.
+        if verify_status != "ok":
+            counts["MISMATCH"] += 1
+            continue
+
         if edge_label in {"BOTTLE", "CAN"}:
-            if verify_status == "ok" and cloud_label == edge_label:
+            if cloud_label == edge_label:
                 counts[edge_label] += 1
             else:
                 counts["MISMATCH"] += 1
             continue
 
-        counts["UNKNOWN"] += 1
+        if cloud_label == "UNKNOWN":
+            counts["UNKNOWN"] += 1
+        else:
+            counts["MISMATCH"] += 1
 
     ordered = sorted(counts.items(), key=lambda item: item[1], reverse=True)
     result: List[Dict[str, object]] = []
@@ -253,6 +260,18 @@ def _presence_summary(devices: List[Dict[str, object]]) -> Dict[str, int]:
     online = sum(1 for d in devices if d.get("status") == "online")
     offline = sum(1 for d in devices if d.get("status") == "offline")
     return {"online": online, "offline": offline}
+
+
+def _parse_latest_limit(raw: Optional[str], default_value: int, max_value: int = 200) -> int:
+    if raw is None:
+        return default_value
+    try:
+        limit = int(raw)
+    except ValueError:
+        return default_value
+    if limit <= 0:
+        return default_value
+    return min(limit, max_value)
 
 
 def _ping_device_over_mqtt(app: Flask, device_id: str) -> Tuple[bool, Dict[str, object]]:
@@ -367,7 +386,8 @@ def create_app(db_path: str) -> Flask:
         summary = _build_summary(rows)
         devices = _attach_presence(_device_stats(rows), int(app.config["ONLINE_WINDOW_SEC"]))
         presence = _presence_summary(devices)
-        latest = _prepare_latest_rows(rows, limit=25)
+        latest_limit = _parse_latest_limit(request.args.get("limit"), default_value=25)
+        latest = _prepare_latest_rows(rows, limit=latest_limit)
         return render_template(
             "dashboard_home.html",
             summary=summary,
@@ -375,6 +395,7 @@ def create_app(db_path: str) -> Flask:
             presence=presence,
             online_window_sec=app.config["ONLINE_WINDOW_SEC"],
             latest=latest,
+            latest_limit=latest_limit,
         )
 
     @app.post("/api/ping/<device_id>")
@@ -394,7 +415,8 @@ def create_app(db_path: str) -> Flask:
 
         summary = _build_summary(rows)
         mix = _scan_mix(rows)
-        latest = _prepare_latest_rows(rows, limit=30)
+        latest_limit = _parse_latest_limit(request.args.get("limit"), default_value=30)
+        latest = _prepare_latest_rows(rows, limit=latest_limit)
         device_presence = _attach_presence(
             [{"device_id": device_id, "count": len(rows), "last_seen_utc": rows[0]["timestamp_utc"]}],
             int(app.config["ONLINE_WINDOW_SEC"]),
@@ -409,6 +431,7 @@ def create_app(db_path: str) -> Flask:
             summary=summary,
             mix=mix,
             latest=latest,
+            latest_limit=latest_limit,
             device_presence=device_presence,
             online_window_sec=app.config["ONLINE_WINDOW_SEC"],
             chart_labels=json.dumps(chart_labels),
