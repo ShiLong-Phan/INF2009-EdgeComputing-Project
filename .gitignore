@@ -2,3 +2,5 @@
 /cp2_cp6/__pycache__
 /captures
 data/pi_outbox.db
+*.jpg
+data/edge_events.db
