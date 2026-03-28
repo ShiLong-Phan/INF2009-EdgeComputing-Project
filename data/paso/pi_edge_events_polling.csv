@@ -1,0 +1,24 @@
+timestamp_utc,event_id,device_id,trigger_mode,edge_reaction_ms,edge_pred_label,edge_confidence,outbox_pending
+2026-03-28T13:53:28.521093+08:00,f8676b8e-5cbd-4d35-94a4-8b1b3c5bbd52,pi-edge-01,camera_motion,29.83,water bottle,0.9265,1
+2026-03-28T13:53:30.243338+08:00,2651966c-d925-4801-8977-634d86b6f068,pi-edge-01,camera_motion,30.56,water bottle,0.9569,1
+2026-03-28T13:53:31.971329+08:00,d6cd314e-7a16-456e-9a08-3afae3404efb,pi-edge-01,camera_motion,34.32,water bottle,0.9817,1
+2026-03-28T13:54:01.306360+08:00,9e3f9729-b1ff-4ec1-8e12-5cf0af7c9d26,pi-edge-01,camera_motion,22.01,water bottle,0.9567,1
+2026-03-28T13:54:03.599519+08:00,e81563f0-73dc-48e7-9cdd-f3bf6194136d,pi-edge-01,camera_motion,53.43,water bottle,0.9789,1
+2026-03-28T13:54:09.017013+08:00,d55a4960-7c49-48b7-b234-c508bd3fccde,pi-edge-01,camera_motion,30.44,water bottle,0.7782,1
+2026-03-28T13:54:10.797952+08:00,9eef432a-2767-4a7c-9448-a78d98e3ac83,pi-edge-01,camera_motion,33.34,water bottle,0.2957,1
+2026-03-28T13:54:13.010682+08:00,e87a6105-ae65-4af5-abd6-520e9c19d505,pi-edge-01,camera_motion,40.07,water bottle,0.22,1
+2026-03-28T13:54:14.732511+08:00,e98492bf-7ae2-44a8-afce-37de88ab716e,pi-edge-01,camera_motion,57.51,plastic bag,0.1473,1
+2026-03-28T13:54:41.513759+08:00,203da04a-b5ac-4dae-ac06-543c5ee1459f,pi-edge-01,camera_motion,22.0,shower curtain,0.2266,1
+2026-03-28T13:54:44.067209+08:00,ee56d548-83ba-4679-9003-ca08569b0e7d,pi-edge-01,camera_motion,26.06,water bottle,0.1668,1
+2026-03-28T13:54:45.894786+08:00,bb204f78-ab62-4114-923c-41fab195b6c9,pi-edge-01,camera_motion,31.83,water bottle,0.2654,1
+2026-03-28T13:54:47.628902+08:00,bb80b678-9274-4d15-9c94-a5204ea4981d,pi-edge-01,camera_motion,38.69,plastic bag,0.1896,1
+2026-03-28T13:55:23.628234+08:00,10e25815-f7ea-4737-86c7-3ba704016c5a,pi-edge-01,camera_motion,25.7,plastic bag,0.2768,1
+2026-03-28T13:55:25.312408+08:00,7c5475a2-9c20-472d-9907-fc396c06cd2a,pi-edge-01,camera_motion,24.34,plastic bag,0.3279,1
+2026-03-28T13:55:27.085312+08:00,d77a240e-76b4-454b-9156-d3df6204e1ff,pi-edge-01,camera_motion,31.44,plastic bag,0.2341,1
+2026-03-28T13:56:38.329812+08:00,361835b1-007b-4f2d-9c8d-cceaa56de3a1,pi-edge-01,camera_motion,21.68,water bottle,0.7339,1
+2026-03-28T13:56:40.127833+08:00,c3361aae-77b4-48b0-8928-e9fe9838a516,pi-edge-01,camera_motion,29.11,water bottle,0.5249,1
+2026-03-28T13:56:41.970107+08:00,236add0b-ebff-49c0-84ae-7d8085383c95,pi-edge-01,camera_motion,46.92,plastic bag,0.215,1
+2026-03-28T13:56:58.337833+08:00,88563663-8e0f-434f-ac2c-1283a5799f8a,pi-edge-01,camera_motion,21.45,plastic bag,0.3457,1
+2026-03-28T13:57:00.081632+08:00,3ea33c4a-aaa3-4cd5-944b-d483292c751d,pi-edge-01,camera_motion,46.62,plastic bag,0.1797,1
+2026-03-28T13:57:01.773568+08:00,5b8dfde4-f436-4dce-88e1-2cb9d3a32113,pi-edge-01,camera_motion,31.49,water bottle,0.9384,1
+2026-03-28T13:57:03.517484+08:00,7bc99f99-f94a-411e-96cc-f78863a26b79,pi-edge-01,camera_motion,41.55,water bottle,0.9782,1
