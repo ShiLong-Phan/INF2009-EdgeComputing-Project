@@ -22,3 +22,7 @@ timestamp_utc,event_id,device_id,trigger_mode,edge_reaction_ms,edge_pred_label,e
 2026-03-28T13:57:00.081632+08:00,3ea33c4a-aaa3-4cd5-944b-d483292c751d,pi-edge-01,camera_motion,46.62,plastic bag,0.1797,1
 2026-03-28T13:57:01.773568+08:00,5b8dfde4-f436-4dce-88e1-2cb9d3a32113,pi-edge-01,camera_motion,31.49,water bottle,0.9384,1
 2026-03-28T13:57:03.517484+08:00,7bc99f99-f94a-411e-96cc-f78863a26b79,pi-edge-01,camera_motion,41.55,water bottle,0.9782,1
+2026-03-28T14:18:32.088728+08:00,d34f7e6b-668a-4c0e-8d0e-4b060eb5e53d,pi-edge-01,camera_motion,21.53,water bottle,0.9737,1
+2026-03-28T14:18:33.761801+08:00,26ab6acb-cf68-42c3-b9a3-0865255ace39,pi-edge-01,camera_motion,28.31,water bottle,0.3866,1
+2026-03-28T14:18:35.469146+08:00,5d7c6448-4888-4757-8949-3fcae671bd64,pi-edge-01,camera_motion,62.04,water bottle,0.6562,1
+2026-03-28T14:18:37.163375+08:00,65ff32be-94b9-4740-ab6f-7cfc1d128fdb,pi-edge-01,camera_motion,38.59,water bottle,0.797,1
