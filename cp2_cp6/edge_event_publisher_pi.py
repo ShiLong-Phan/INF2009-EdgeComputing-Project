@@ -39,6 +39,7 @@ TRIGGER_PROFILES = {
 class EdgePublisherApp:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
+        self._resolve_sound_file_path()
         self.motion_state = False
         self.serial_buffer = bytearray()
         self.last_trigger_monotonic = 0.0
@@ -66,6 +67,23 @@ class EdgePublisherApp:
                             "outbox_pending",
                         ]
                     )
+
+    def _resolve_sound_file_path(self) -> None:
+        if not self.args.sound_file:
+            return
+
+        requested = os.path.expanduser(self.args.sound_file)
+        if os.path.exists(requested):
+            self.args.sound_file = os.path.abspath(requested)
+            return
+
+        # Fallback for Pi-specific absolute paths (e.g. /home/pi/sounds/beep.wav)
+        # when running from this repository on another host.
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        fallback = os.path.join(repo_root, "sounds", os.path.basename(requested))
+        if os.path.exists(fallback):
+            print(f"[EDGE] Using fallback sound file: {fallback}")
+            self.args.sound_file = fallback
 
     @staticmethod
     def decode_signed(raw: int) -> Optional[int]:
