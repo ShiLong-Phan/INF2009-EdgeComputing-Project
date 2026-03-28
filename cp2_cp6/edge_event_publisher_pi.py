@@ -475,7 +475,7 @@ class EdgePublisherApp:
 
                         file_name = f"trigger_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
                         image_path = os.path.join(self.args.capture_dir, file_name)
-                        cv2.imwrite(image_path, image)
+                        cv2.imwrite(image_path, image, [cv2.IMWRITE_JPEG_QUALITY, 80])
 
                         label, confidence = self.run_inference(image)
                         edge_reaction_ms = (time.perf_counter() - trigger_started) * 1000.0
