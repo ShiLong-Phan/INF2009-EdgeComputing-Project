@@ -18,9 +18,9 @@ python3 cp2_cp6/edge_event_publisher_pi.py \
   --ca-cert certs/ca.crt \
   --client-cert certs/pi-client.crt \
   --client-key certs/pi-client.key \
-  --model-path mobilenet_v2_1.0_224.tflite \
-  --label-path labels.txt \
-  --edge-model-version mobilenetv2-baseline \
+  --model-path waste_classifier/waste_classifier_v1.tflite \
+  --label-path waste_classifier/labels.txt \
+  --edge-model-version waste-classifier-v1 \
   --capture-dir captures \
   --sound-file sounds/beep.wav \
   --min-speed-cm-s 65 \
@@ -28,4 +28,9 @@ python3 cp2_cp6/edge_event_publisher_pi.py \
   --retry-base-sec 2 \
   --max-retry-backoff-sec 60 \
   --max-image-bytes 400000 \
-  --frame-width 320 --frame-height 240
+  --recyclable-keywords AluCan,PET \
+  --bg-threshold 30 \
+  --bg-min-area-px 1500 \
+  --bg-crop-pad-px 10 \
+  --bg-blur-kernel 21 \
+  --min-confidence 0.8
