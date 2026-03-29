@@ -1,0 +1,31 @@
+LAPTOP:
+set NANOGPT_API_KEY=apikeyhere
+Flask:
+python cp2_cp6\dashboard_cp7.py --db-path .\data\edge_events.db --host 0.0.0.0 --port 5050
+MQTT Broker:
+mosquitto -c mosquitto_tls.conf -v
+Subscriber:
+python cp2_cp6\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db --image-store-dir .\data\images --nanogpt-model qwen3.5-27b
+
+PI:
+python3 cp2_cp6/edge_event_publisher_pi.py \
+  --broker-host DOMCOM2 \
+  --broker-port 8883 \
+  --topic edge/events/v1 \
+  --image-topic-prefix edge/images/v1 \
+  --device-id pi-edge-01 \
+  --trigger-mode inside_bin \
+  --ca-cert certs/ca.crt \
+  --client-cert certs/pi-client.crt \
+  --client-key certs/pi-client.key \
+  --model-path mobilenet_v2_1.0_224.tflite \
+  --label-path labels.txt \
+  --edge-model-version mobilenetv2-baseline \
+  --capture-dir captures \
+  --sound-file sounds/beep.wav \
+  --min-speed-cm-s 65 \
+  --outbox-db-path data/pi_outbox.db \
+  --retry-base-sec 2 \
+  --max-retry-backoff-sec 60 \
+  --max-image-bytes 400000 \
+  --frame-width 320 --frame-height 240
