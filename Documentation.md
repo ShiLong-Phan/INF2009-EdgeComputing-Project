@@ -1,22 +1,14 @@
-# Edge Computing Project Plan
+# Edge Computing Project — Documentation
 
-## Project Goal
+## 1. Project Goal
 
 Build an edge-assisted recyclable classifier with two stages:
 1) Edge device gives fast local prediction and immediate feedback.
 2) Edge server performs mandatory cloud verification (NanoGPT/Qwen API) and stores final result.
 
-The first release should prioritize a stable baseline and data collection. Improvements should be added only after baseline metrics are collected.
+The first release prioritises a stable baseline and data collection. Improvements are added only after baseline metrics are collected.
 
-## Confirmed Decisions
-
-1) MQTT broker and edge server run on laptop (local network).
-2) Cloud verification is mandatory for all events.
-3) Image storage is optional and should support cleanup from dashboard command.
-4) Target edge model accuracy is around 80 percent (initial baseline target).
-5) Latency target of sub-100ms is aspirational for edge-only stage; full pipeline latency with cloud verification will likely be higher.
-
-## Hardware
+## 2. Hardware
 
 - Logitech C310 webcam
 - Powerbank (5V output)
@@ -25,370 +17,509 @@ The first release should prioritize a stable baseline and data collection. Impro
 - Raspberry Pi edge device
 - Laptop for MQTT broker, server, dashboard, and local DB
 
-## Deployment Modes
-
-Edge device can be mounted in either mode:
-1) Inside-bin mode: detect when trash is thrown in.
-2) Outside-bin mode: user handwaves to trigger capture.
-
-Both modes should reuse the same software pipeline and differ only in sensor threshold/tuning config.
-
-## Baseline System Architecture
+## 3. System Architecture
 
 ### Edge Device (Raspberry Pi)
 
-1) Read mmWave events.
-2) On trigger, capture image.
-3) Run local classifier (MobileNetV2 prototype: bottle/can first).
-4) Play affirmative sound for recyclable classes.
-5) Create event payload with metadata and optional image path.
+1) Read mmWave sensor events.
+2) On trigger, capture image and run frame differencing to isolate foreground object.
+3) Run local TFLite classifier (waste_classifier_v1 — MobileNetV2 fine-tuned on drinking waste).
+4) Play affirmative sound for recyclable classes (AluCan, PET).
+5) Create event payload with metadata and image.
 6) Publish payload to laptop via MQTTS.
-7) If broker unreachable, save event in local outbox queue and retry later.
+7) If broker unreachable, save event in local SQLite outbox queue and retry with exponential backoff.
 
 ### Edge Server (Laptop)
 
-1) Receive MQTT event package.
-2) Validate schema and event id.
-3) Run mandatory Gemini verification via API.
-4) Compare edge prediction vs Gemini result.
-5) Store event, predictions, and comparison in local DB.
-6) Update dashboard with latest status and metrics.
+1) Receive MQTT event metadata and image.
+2) Validate schema and event_id (idempotent upsert).
+3) Run cloud verification via NanoGPT/Qwen API.
+4) Compare edge prediction vs cloud result.
+5) Store event, predictions, and comparison in local SQLite DB.
+6) Update CP7 Flask dashboard.
 
-## Data Contract (MVP)
+## 4. Deployment Modes
 
-Each event should include at least:
+Edge device can be mounted in either mode:
+- `inside_bin`: detect when trash is thrown in. Speed threshold default 65 cm/s.
+- `outside_bin`: user hand-waves to trigger capture. Speed threshold default 70 cm/s.
 
-- event_id: unique UUID for deduplication
-- device_id: edge device identifier
-- timestamp_utc
-- trigger_mode: inside_bin or outside_bin
-- edge_model_version
-- edge_pred_label
-- edge_confidence
-- image_ref: optional local filename/hash
-- payload_version
+Both modes use the same software pipeline (`edge_event_publisher_pi.py`), differing only in the speed gate. Use `--trigger-mode` and optionally `--min-speed-cm-s` to configure.
 
-Server should enforce idempotent upsert by event_id.
+## 5. Data Contract
 
-## Security and Transport
+Each MQTT event envelope contains:
 
-Use MQTTS (TLS) for transport security.
+| Field | Description |
+|---|---|
+| `event_id` | UUID, used for server-side deduplication (idempotent upsert) |
+| `device_id` | Edge device identifier (e.g. `pi-edge-01`) |
+| `timestamp_utc` | ISO-8601 event time |
+| `trigger_mode` | `inside_bin` or `outside_bin` |
+| `edge_model_version` | Model identifier string (e.g. `waste-classifier-v1`) |
+| `edge_pred_label` | Predicted class label |
+| `edge_confidence` | Float 0–1 |
+| `image_ref` | Optional filename/hash |
+| `payload_version` | Schema version |
 
-For MVP:
-1) TLS in transit is mandatory.
-2) Mutual TLS is preferred if feasible in time.
-3) Payload encryption at application layer is optional and can be deferred.
+## 6. Security and Transport
+
+- MQTTS (TLS 1.2+) on port 8883, mutual TLS required.
+- All clients (laptop receiver, laptop dashboard, Pi publishers) present certificates signed by the local CA.
+- CA private key (`certs/ca.key`) stays on laptop only — never copy to Pi.
+- Payload-level encryption is out of scope.
+
+## 7. Performance Targets
+
+1) Edge reaction latency (trigger → local inference): target < 100 ms. Baseline measurement: mean 34 ms, p95 47 ms.
+2) End-to-end verified latency (trigger → cloud-verified DB write): target < 5 s. Baseline measurement: mean 4537 ms, p95 8470 ms.
+3) Bottleneck identified: network + NanoGPT API roundtrip (phone hotspot). Edge reaction itself is well under target.
+
+---
+
+## 8. Setup Guide
+
+### 8.1 Naming Convention
+
+Use these identities consistently to avoid TLS hostname mismatches:
+
+| Role | Identity |
+|---|---|
+| Laptop hostname (broker) | `DOMCOM2` |
+| Pi 1 device-id | `pi-edge-01` |
+| Pi 2 device-id | `pi-edge-02` |
+| Metadata MQTT topic | `edge/events/v1` |
+| Image MQTT topic prefix | `edge/images/v1` |
+
+### 8.2 Laptop Prerequisites
+
+Install (Windows):
+1. Python 3.10+
+2. OpenSSL
+3. Mosquitto broker
+
+Ensure all three are on `PATH`:
+
+```powershell
+python --version
+openssl version
+mosquitto -h
+```
+
+### 8.3 Laptop Python Virtual Environment
+
+```powershell
+python -m venv .venv-laptop
+.\.venv-laptop\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r cp2_cp6\requirements-laptop.txt
+```
+
+### 8.4 TLS Certificate Setup
+
+Run from repo root. Replace `192.168.1.232` with your **current laptop IP** before generating `server.crt`.
+
+#### CA and Broker Server Cert
+
+```powershell
+New-Item -ItemType Directory -Force certs | Out-Null
+Set-Location certs
+
+# CA — keep ca.key on laptop only, never copy to Pi
+openssl genrsa -out ca.key 4096
+openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt -subj "/CN=cp1-local-ca"
+
+# Broker server cert — SAN must include laptop hostname AND current IP
+openssl genrsa -out server.key 2048
+openssl req -new -key server.key -out server.csr -subj "/CN=DOMCOM2"
+Set-Content -Path server.ext -Value "subjectAltName=DNS:DOMCOM2,IP:192.168.1.232`nextendedKeyUsage=serverAuth"
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 825 -sha256 -extfile server.ext
+
+Set-Location ..
+```
+
+> **Laptop IP changed?** Only regenerate `server.crt/server.key/server.csr/server.ext`. CA and all client certs are IP-independent.
+
+#### Laptop Receiver Client Cert
+
+```powershell
+Set-Location certs
+openssl genrsa -out laptop-client.key 2048
+openssl req -new -key laptop-client.key -out laptop-client.csr -subj "/CN=laptop-receiver"
+Set-Content -Path laptop-client.ext -Value "extendedKeyUsage=clientAuth"
+openssl x509 -req -in laptop-client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out laptop-client.crt -days 825 -sha256 -extfile laptop-client.ext
+Set-Location ..
+```
+
+#### Pi Client Certs (one per Pi)
+
+Pi 1:
+
+```powershell
+Set-Location certs
+openssl genrsa -out pi-edge-01.key 2048
+openssl req -new -key pi-edge-01.key -out pi-edge-01.csr -subj "/CN=pi-edge-01"
+Set-Content -Path pi-edge-01.ext -Value "extendedKeyUsage=clientAuth"
+openssl x509 -req -in pi-edge-01.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out pi-edge-01.crt -days 825 -sha256 -extfile pi-edge-01.ext
+Set-Location ..
+```
+
+Pi 2 (same pattern, substitute `pi-edge-02`):
+
+```powershell
+Set-Location certs
+openssl genrsa -out pi-edge-02.key 2048
+openssl req -new -key pi-edge-02.key -out pi-edge-02.csr -subj "/CN=pi-edge-02"
+Set-Content -Path pi-edge-02.ext -Value "extendedKeyUsage=clientAuth"
+openssl x509 -req -in pi-edge-02.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out pi-edge-02.crt -days 825 -sha256 -extfile pi-edge-02.ext
+Set-Location ..
+```
+
+### 8.5 Windows Firewall Rule (once, admin PowerShell)
+
+```powershell
+netsh advfirewall firewall add rule name="MQTTS 8883" dir=in action=allow protocol=TCP localport=8883
+```
+
+### 8.6 Mosquitto Config
+
+`mosquitto_tls.conf` in repo root (already committed):
+
+```conf
+listener 8883
+cafile certs/ca.crt
+certfile certs/server.crt
+keyfile certs/server.key
+
+require_certificate true
+use_identity_as_username true
+allow_anonymous false
+```
+
+### 8.7 Raspberry Pi Setup (repeat for each Pi)
+
+#### Install system packages
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip netcat-openbsd
+```
+
+#### Copy project files
+
+Copy the full repo to the Pi. Then copy and rename cert files:
+
+- **Pi 1**: copy `certs/pi-edge-01.crt` → `certs/pi-client.crt`, `certs/pi-edge-01.key` → `certs/pi-client.key`, plus `certs/ca.crt`.
+- **Pi 2**: same but with `pi-edge-02.*` files.
+
+Also copy the model and labels:
+- `waste_classifier/waste_classifier_v1.tflite`
+- `waste_classifier/labels.txt`
+
+```bash
+chmod 600 certs/pi-client.key
+```
+
+#### Resolve laptop hostname
+
+Add current laptop IP to `/etc/hosts` on the Pi. **Update this whenever the network changes (new hotspot/router):**
+
+```bash
+echo "192.168.1.232 DOMCOM2" | sudo tee -a /etc/hosts
+getent hosts DOMCOM2
+nc -vz DOMCOM2 8883
+```
+
+#### Python virtual environment
+
+```bash
+python3 -m venv .venv-pi
+source .venv-pi/bin/activate
+pip install --upgrade pip
+pip install -r cp2_cp6/requirements-pi.txt
+```
+
+> `requirements-pi.txt` includes `ai-edge-litert` for TFLite inference (Python 3.13 compatible).
+
+---
+
+## 9. Running the System
+
+See `Essential startup cmds.txt` for copy-paste ready one-liners.
+
+### 9.1 Laptop — Start All Services
+
+**Terminal 1 — MQTT Broker:**
+
+```powershell
+mosquitto -c mosquitto_tls.conf -v
+```
+
+**Set API key before starting receiver (CMD):**
+
+```cmd
+set NANOGPT_API_KEY=your_actual_key_here
+```
+
+**Terminal 2 — Event Receiver:**
+
+```powershell
+.\.venv-laptop\Scripts\Activate.ps1
+python cp2_cp6\server_event_receiver_laptop.py --broker-host DOMCOM2 --broker-port 8883 --topic edge/events/v1 --image-topic-prefix edge/images/v1 --ca-cert .\certs\ca.crt --client-cert .\certs\laptop-client.crt --client-key .\certs\laptop-client.key --db-path .\data\edge_events.db --image-store-dir .\data\images --nanogpt-model qwen3.5-27b
+```
+
+**Terminal 3 — CP7 Dashboard:**
+
+```powershell
+.\.venv-laptop\Scripts\Activate.ps1
+python cp2_cp6\dashboard_cp7.py --db-path .\data\edge_events.db --host 0.0.0.0 --port 5050
+```
+
+Open: `http://localhost:5050/`
+
+### 9.2 Pi — Start Publisher
+
+```bash
+source .venv-pi/bin/activate
+python3 cp2_cp6/edge_event_publisher_pi.py \
+  --broker-host DOMCOM2 \
+  --broker-port 8883 \
+  --topic edge/events/v1 \
+  --image-topic-prefix edge/images/v1 \
+  --device-id pi-edge-01 \
+  --trigger-mode inside_bin \
+  --ca-cert certs/ca.crt \
+  --client-cert certs/pi-client.crt \
+  --client-key certs/pi-client.key \
+  --model-path waste_classifier/waste_classifier_v1.tflite \
+  --label-path waste_classifier/labels.txt \
+  --edge-model-version waste-classifier-v1 \
+  --capture-dir captures \
+  --sound-file sounds/beep.wav \
+  --min-speed-cm-s 65 \
+  --outbox-db-path data/pi_outbox.db \
+  --retry-base-sec 2 \
+  --max-retry-backoff-sec 60 \
+  --max-image-bytes 400000 \
+  --recyclable-keywords AluCan,PET \
+  --bg-threshold 30 \
+  --bg-min-area-px 1500 \
+  --bg-crop-pad-px 10 \
+  --bg-blur-kernel 21 \
+  --min-confidence 0.8
+```
+
+For Pi 2: change `--device-id pi-edge-02`.
+
+---
+
+## 10. Troubleshooting
+
+### Pi cannot resolve laptop hostname
+
+**Symptom:** `socket.gaierror: [Errno -2] Name or service not known`
+
+**Fix:** Add mapping to `/etc/hosts` on Pi:
+```bash
+echo "192.168.1.232 DOMCOM2" | sudo tee -a /etc/hosts
+```
+Update the IP every time you change networks.
+
+### TLS fails with IP address mismatch
+
+**Symptom:** `ssl.SSLCertVerificationError: certificate verify failed: IP address mismatch`
+
+**Fix:** Always connect using hostname (`DOMCOM2`), not the raw IP. The server certificate identity is hostname-based. If you must include an IP, regenerate `server.crt` with both DNS and IP in the SAN.
+
+### Mosquitto reports "bad certificate"
+
+**Symptom:** Mosquitto log shows `ssl/tls alert bad certificate` / `protocol error`
+
+**Diagnosis (run on Pi):**
+
+```bash
+openssl x509 -in certs/pi-client.crt -noout -subject -issuer -dates
+openssl verify -CAfile certs/ca.crt certs/pi-client.crt
+# Cert and key modulus must match:
+openssl x509 -in certs/pi-client.crt -noout -modulus | openssl md5
+openssl rsa  -in certs/pi-client.key  -noout -modulus | openssl md5
+# Compare CA fingerprint on laptop vs Pi:
+openssl x509 -in certs/ca.crt -noout -fingerprint -sha256
+```
+
+Common causes: stale cert copied to Pi, cert/key mismatch, cert signed by wrong CA.
+
+### Duplicate events
+
+Server performs idempotent upsert keyed by `event_id`. Duplicate publishes result in one logical DB row with `receive_count` incremented. This is expected and by design.
+
+---
+
+## 11. Checkpoint Plan
+
+### CP0 — Environment and Reproducibility (DONE)
+
+Scope: pin Python versions and dependencies, split requirements for edge and server, verify camera + UART sensor setup.
+
+### CP1 — Basic MQTTS Link (Pi → Laptop) (DONE)
+
+Scope: Mosquitto broker on laptop, TLS certificates, publish test payload from Pi.
+
+### CP2 — Event Schema and Reliability (DONE)
+
+Scope: JSON event envelope with `event_id` + `timestamp_utc`, QoS 1 publish, server dedup logic (idempotent SQLite upsert keyed by `event_id`).
+
+### CP3 — Sensor Trigger Pipeline (DONE)
+
+Scope: mmWave serial frame parsing (HLK-LD2450), trigger profiles (`inside_bin` / `outside_bin`), speed gate tuning, debounce guard.
+
+CLI knobs: `--min-speed-cm-s`, `--max-distance-cm`, `--debounce-sec`.
+
+### CP4 — Capture + Local Inference Baseline (DONE)
+
+Scope: capture image on trigger, run local TFLite model, attach prediction to MQTT payload, play affirmative sound for recyclable labels.
 
 Notes:
-- MQTTS secures data in transit.
-- If local disk encryption is needed later, treat it as a separate improvement track.
+- If model or labels are missing, script runs in capture-only mode (`label=unknown`, `confidence=0.0`), preserving the CP2 data contract.
+- Sound playback via `aplay` — requires `alsa-utils` on Pi.
 
-## Performance Targets
+### CP5 — Offline Outbox Queue (DONE)
 
-Define two latency metrics to avoid mixing local and cloud paths:
+Scope: SQLite FIFO outbox on Pi, publish both event metadata and image (QoS 1), retry with exponential backoff.
 
-1) Edge reaction latency (trigger to local inference + sound): target less than 100ms aspirational, acceptable initial baseline less than 300ms.
-2) End-to-end verified latency (trigger to Gemini-verified DB write): target less than 2-5s depending on network/API.
+Retry formula: `delay = retry_base_sec × 2^(retry_count−1)`, capped by `--max-retry-backoff-sec`.
 
-Additional baseline targets:
-- Edge model accuracy: at least 80 percent on defined validation set.
-- Queue durability: no data loss in a 10-minute laptop disconnect test.
-- Duplicate handling: duplicate event publish results in one logical row.
+### CP6 — Cloud Verification (DONE)
 
-## Checkpoint Plan (Small Milestones)
+Scope: laptop subscribes to metadata + image topics, stores image files, calls NanoGPT/Qwen API, stores `verify_status`, `verify_label`, `verify_confidence`, `verify_error`.
 
-### CP0 - Environment and Reproducibility (DONE)
+Current model: `qwen3.5-27b` via `--nanogpt-model`.
 
-Scope:
-- Pin Python versions and dependencies.
-- Split requirements for edge and server.
-- Verify camera + UART sensor setup.
+### CP7 — Dashboard MVP (DONE)
 
-Exit criteria:
-- Fresh setup can run sensor test and camera capture without manual fixes.
+Scope: Flask + Jinja2 dashboard (`dashboard_cp7.py`).
 
-### CP1 - Basic MQTTS Link (Pi -> Laptop) (DONE)
+Features:
+- Landing page: global KPIs, latest events, device leaderboard.
+- Per-device drilldown: scanned material mix, agreement rate, latest events table.
+- Edge vs Cloud column: MATCH / MISMATCH / N/A.
+- Device online/offline status (configurable window via `--online-window-sec`).
+- Ping button: sends MQTT ping to Pi, shows round-trip latency.
+- Reset Background button: sends MQTT command to Pi to capture a fresh background frame.
 
-Scope:
-- Start Mosquitto broker on laptop.
-- Configure TLS certificates.
-- Publish hello payload from Pi and consume on laptop.
+Label normalisation (`_normalize_label` in `dashboard_cp7.py`):
+- `AluCan` → `CAN`
+- `PET` → `BOTTLE`
+- `Glass` → `UNKNOWN`
+- `HDPEM` → `UNKNOWN`
+- Everything else → `UNKNOWN`
 
-Exit criteria:
-- Stable publish/consume over MQTTS for at least 1000 test messages.
+### CP7.5 — PASO + Optimisations (DONE — between CP7 and CP8)
 
-### CP2 - Event Schema and Reliability (IMPLEMENTED IN CODE)
+PASO = Profile, Analyse, Schedule, Optimise.
 
-Scope:
-- Implement JSON event envelope.
-- Add event_id and timestamp.
-- Use QoS 1 and server dedup logic.
+#### Profiling and baseline capture
 
-Exit criteria:
-- Intentional duplicate messages create one logical DB record.
+System and event metrics collected over 300-second window using `mobilenetv2-baseline`:
 
-### CP3 - Sensor Trigger Pipeline (IMPLEMENTED IN CODE)
+- Edge reaction latency: mean 34 ms, median 33 ms, p95 47 ms.
+- Broker ingest latency: mean 1070 ms, median 406 ms, p95 3984 ms.
+- Verification latency: mean 4537 ms, p95 8470 ms.
+- Pi process RSS: ~139 MB. CPU: mean 3.5%, p95 10%.
+- **Bottleneck:** network + NanoGPT API (phone hotspot). Edge reaction was already under 50 ms.
 
-Scope:
-- Convert mmWave detection into event creation.
-- Tune thresholds for inside-bin and outside-bin profiles.
-
-Exit criteria:
-- Trigger behavior is predictable in both mounting modes.
-
-### CP4 - Capture + Local Inference Baseline (IMPLEMENTED IN CODE)
-
-Scope:
-- Capture image on motion trigger.
-- Run local model and include prediction in payload.
-- Play affirmative sound for recyclable class.
-
-Exit criteria:
-- End-to-end local edge loop works repeatedly without crash.
-
-### CP5 - Offline Outbox Queue (IMPLEMENTED IN CODE)
-
-Scope:
-- Persist unsent events locally.
-- Retry with exponential backoff when laptop is offline.
-
-Exit criteria:
-- No data loss after forced disconnection and reconnect test.
-
-### CP6 - Mandatory Gemini Verification (IMPLEMENTED IN CODE)
-
-Scope:
-- Server receives event, calls Gemini API for verification.
-- Store edge vs cloud comparison fields.
-
-Exit criteria:
-- Every received event has a verification result or explicit error status.
-
-### CP7 - Dashboard MVP (IMPLEMENTED IN CODE)
-
-Scope:
-- Show latest events, online/offline status, queue depth, agreement rate.
-- Show counts by class and time window.
-
-Exit criteria:
-- Dashboard provides enough information for demo and debugging.
-
-### CP7.5 - PASO + Optimisations (IMPLEMENTED — done between CP7 and CP8)
-
-PASO stands for Profile, Analyse, Schedule, Optimise. This was carried out as a
-structured measurement-and-improvement cycle before progressing to CP8.
-
-#### Profiling and baseline capture (done)
-
-System and event metrics were collected over a 300-second window while running the
-full pipeline (mmWave trigger → local inference → MQTT publish → cloud verification)
-using mobilenetv2-baseline. Key results:
-
-- Edge reaction latency (trigger to inference): mean 34 ms, median 33 ms, p95 47 ms.
-- Broker ingest latency (edge to server): mean 1070 ms, median 406 ms, p95 3984 ms.
-- Verification latency (trigger to cloud result): mean 4537 ms, p95 8470 ms.
-- Pi process RSS: ~139 MB. Pi process CPU: mean 3.5%, p95 10%.
-- Identified bottleneck: network and cloud API (phone hotspot + NanoGPT roundtrip).
-  Edge reaction itself was already under 50 ms.
-
-Full baseline data is in data/paso/baseline_report.md and baseline_report.json.
+Full data: `data/paso/baseline_report.md` and `baseline_report.json`.
 
 #### Optimisation 1 — Static background frame differencing (Variant A)
 
-Motivation: the raw trigger frame fed to the classifier includes the surrounding
-environment (wall, bin, hands), which degrades accuracy on the custom waste model.
-Frame differencing removes the static background so the model receives only the
-foreground object.
+Motivation: raw trigger frames include the bin interior/wall/hands, degrading accuracy on the custom waste model. Frame differencing passes only the foreground object to the classifier.
 
-How it works (edge_event_publisher_pi.py):
-1. On startup the publisher captures one reference background frame from the camera
-   and saves it to captures/background.jpg. If a saved background already exists it
-   is loaded instead. Nothing else happens until a trigger fires.
-2. On each mmWave trigger, the trigger frame is first saved as trigger_<ts>.jpg (raw).
+How it works (`edge_event_publisher_pi.py`):
+1. On startup, the publisher captures one reference background frame and saves it to `captures/background.jpg`. If a saved background already exists it is loaded instead.
+2. On each trigger, the raw frame is saved as `trigger_<ts>.jpg`.
 3. Frame differencing pipeline:
-   a. Both background and trigger frames are converted to grayscale and Gaussian-blurred
-      (kernel default 21) to suppress per-pixel noise from camera auto-exposure shifts.
-   b. cv2.absdiff produces an absolute-difference image.
-   c. Binary threshold (default 30) → morphological close → dilate yields a foreground mask.
-   d. The largest contour is found. If its area exceeds bg-min-area-px (default 1500),
-      its bounding rect is cropped with padding from the colour frame and saved as
-      processed_<ts>.jpg.
-   e. If no significant contour is found the full raw frame is used as fallback.
-4. The processed (cropped) image is what is fed to the classifier and published to the
-   cloud, not the raw frame.
-5. PASO log gains a fg_area_px column so crop size can be correlated with accuracy.
+   a. Both frames are converted to grayscale and Gaussian-blurred (kernel default 21) to suppress auto-exposure noise.
+   b. `cv2.absdiff` → binary threshold → morphological close → dilate.
+   c. Largest contour found. If its area exceeds `bg-min-area-px` (default 1500), its bounding rect is cropped with padding from the colour frame, saved as `processed_<ts>.jpg`, and fed to the classifier.
+   d. If no significant contour is found, inference is skipped entirely — event logged as `unknown/0.0`, no beep. This guards against spurious sensor triggers.
+4. The cropped image (not the raw frame) is published to the cloud.
+5. PASO log gains a `fg_area_px` column.
 
-New CLI flags on edge_event_publisher_pi.py:
-- --bg-threshold (default 30): binary diff threshold.
-- --bg-min-area-px (default 1500): minimum foreground contour area to accept.
-- --bg-crop-pad-px (default 10): padding around the crop bounding rect.
-- --bg-blur-kernel (default 21): Gaussian blur kernel size before diffing (0 to disable).
-- --min-confidence (default 0.8): confidence gate — if the top class score is below this
-  threshold the prediction is overridden to "unknown" and no beep is triggered. Suppresses
-  false positives when the sensor fires but no clear object is present.
+New CLI flags:
+- `--bg-threshold` (default 30): binary diff threshold.
+- `--bg-min-area-px` (default 1500): minimum contour area to accept as foreground.
+- `--bg-crop-pad-px` (default 10): padding around crop bounding rect.
+- `--bg-blur-kernel` (default 21): Gaussian kernel size (0 to disable).
+- `--min-confidence` (default 0.8): confidence gate — if top class score < threshold, label is overridden to `unknown` and no beep fires.
 
-False-positive handling: if frame differencing finds no contour above bg-min-area-px,
-inference is skipped entirely. The event is logged as unknown/0.0 and the loop continues
-without beeping. This is the primary guard against spurious triggers (e.g. hand waving
-near the sensor without holding an item).
-
-Dashboard (dashboard_cp7.py) gains a POST /api/reset-bg/<device_id> endpoint that
-publishes an MQTT command to edge/bg-reset/request/<device_id>. The publisher
-subscribes to this topic and resets the background from the next available camera
-frame. A "Reset Background" button was added to the device detail page in the
-dashboard for this purpose.
+Dashboard gains `POST /api/reset-bg/<device_id>` which publishes an MQTT command to `edge/bg-reset/request/<device_id>`. The Pi publisher subscribes to this topic and re-captures the background on the next available frame.
 
 #### Optimisation 2 — Custom-trained waste classifier model
 
-Motivation: the original mobilenet_v2_1.0_224.tflite (ImageNet classes) was poor
-at distinguishing cans specifically. Trained a MobileNetV2 fine-tuned
-on the Kaggle "Drinking Waste Classification" dataset (arkadiyhacks) using
-Edge_Model_Refinement.ipynb.
+Motivation: the original `mobilenet_v2_1.0_224.tflite` (ImageNet classes) was poor at distinguishing cans. A MobileNetV2 was fine-tuned on the Kaggle "Drinking Waste Classification" dataset (arkadiyhacks) via `Edge_Model_Refinement.ipynb`.
 
 Model details:
 - Base: MobileNetV2 1.00/224, ImageNet weights, backbone frozen.
 - Head: GlobalAveragePooling2D → Dropout(0.3) → Dense(4, softmax).
 - 4 classes: AluCan, Glass, HDPEM, PET.
 - Training: 20 epochs, data augmentation (flip, rotation, brightness), ReduceLROnPlateau.
-- Saved as waste_classifier/waste_classifier_v1.keras (Keras 3, 9.2 MB).
+- Saved as `waste_classifier/waste_classifier_v1.keras` (9.2 MB).
 
-Conversion: the .keras file was converted to TFLite with default quantization using
-TFLiteConverter.from_keras_model(), producing waste_classifier/waste_classifier_v1.tflite
-(2.42 MB). Labels file is waste_classifier/labels.txt (one class per line, alphabetical).
+Conversion: `TFLiteConverter.from_keras_model()` with default optimisation → `waste_classifier/waste_classifier_v1.tflite` (2.42 MB). Labels: `waste_classifier/labels.txt` (alphabetical, one per line).
 
-Inference runtime: switched from cv2.dnn.readNet() (which couldn't handle the augmentation
-layer baked into the model) to the TFLite interpreter. Import priority is
-ai_edge_litert → tflite_runtime → tensorflow.lite. Preprocessing is done manually:
-resize to 224×224 → BGR→RGB → scale to [-1, 1] → expand batch dimension.
+Inference runtime: switched from `cv2.dnn.readNet()` (incompatible with the data augmentation layer baked into the model) to the TFLite interpreter. Import priority: `ai_edge_litert` → `tflite_runtime` → `tensorflow.lite`. Preprocessing: resize to 224×224 → BGR→RGB → scale to [−1, 1] → expand batch dimension.
 
-Label normalisation in dashboard_cp7.py (_normalize_label) and paso_analyze_run.py
-(normalize_label) map the 4 model classes to dashboard categories:
-- AluCan → CAN (contains "can" substring, matched automatically).
-- PET → BOTTLE (bottle-shaped recyclable; target for beep).
-- Glass → UNKNOWN (not a campaign-target recyclable in this deployment).
-- HDPEM → UNKNOWN (same rationale as Glass).
+Label mapping (both `_normalize_label` in `dashboard_cp7.py` and `normalize_label` in `paso_analyze_run.py`):
+- `AluCan` → `CAN`
+- `PET` → `BOTTLE`
+- `Glass` → `UNKNOWN` (not a targeted recyclable in this deployment)
+- `HDPEM` → `UNKNOWN` (same rationale)
 
-> **[OUTDATED — superseded]** Previously Glass and HDPEM were mapped to BOTTLE.
-> Changed because they are not recyclables targeted by this bin campaign and should
-> not count as verified recyclable detections or trigger agreement in analysis.
-
-Only AluCan and PET trigger the affirmative beep (--recyclable-keywords AluCan,PET).
-Glass and HDPEM are logged as UNKNOWN and do not beep.
+Only `AluCan` and `PET` trigger the affirmative beep (`--recyclable-keywords AluCan,PET`).
 
 #### Post-optimisation measurement
 
-After-run commands (capturing 300-second window, same workload) are in PasoPlan.md
-section 3. The Pi publisher command uses --model-path waste_classifier/waste_classifier_v1.tflite,
---edge-model-version waste-classifier-v1, and the new background differencing flags.
-Results will be compared against the baseline using paso_compare_runs.py.
+After-run commands are in `PasoPlan.md` section 3. Results compared against baseline via `paso_compare_runs.py`. After-run data: `data/paso/after_report.md` and `after_report.json`. Comparison: `data/paso/comparison.md`.
 
-### CP8 - ML/AI features
-Scope:
-Build an analytics page and dataset export flow that answers: "What are users trying to recycle, and where are they uncertain?"
+### CP8 — ML/AI Features (Planned)
+
+Scope: analytics page and dataset export flow answering "What are users trying to recycle, and where are they uncertain?"
 
 Core analytics deliverables:
-1) Global spread of scanned materials:
-	- Count and percentage by normalized class (BOTTLE, CAN, UNKNOWN, OTHER).
-	- UNKNOWN and OTHER are treated as non-recyclable/uncertain campaign targets.
-2) Per-device behavior profile:
-	- Top scanned labels per device.
-	- Unknown-rate per device = unknown_or_other_scans / total_scans.
-3) Verification quality analytics:
-	- Agreement rate by device and globally.
-	- Mismatch distribution (edge says bottle, cloud says can, etc.).
-4) Time-window insights:
-	- Daily and hourly scan volume trends.
-	- Daily unknown-rate trend to detect confusion periods.
-5) Campaign recommendation view (rule-based for MVP):
-	- If unknown-rate for a device/time-window exceeds threshold, flag campaign focus.
-	- Example recommendation: "Increase bottle-vs-can signage near Device pi-edge-02."
+1. Global material spread: count and % by normalised class (BOTTLE, CAN, UNKNOWN).
+2. Per-device profile: top labels, unknown-rate per device.
+3. Verification quality: agreement rate by device, mismatch distribution.
+4. Time-window insights: daily/hourly scan volume trends, daily unknown-rate trend.
+5. Campaign recommendation view (rule-based MVP): flag devices where unknown-rate exceeds threshold.
 
-Suggested CP8 dashboard pages:
-1) Data page (global): spread charts + latest 7-day trends.
-2) Device analytics page: per-device material mix and unknown-rate trend.
-3) Campaign insights page: ranked recommended interventions.
+Planned dashboard pages: Data (global), Device analytics, Campaign insights.
 
-Practical ML progression (post-MVP):
-1) Baseline forecasting with simple time-series/linear trend on daily counts.
-2) Confidence calibration of edge model using cloud-confirmed labels.
-3) Drift watch: detect sudden class distribution changes by device.
+Post-MVP ML progression:
+1. Baseline forecasting with simple time-series/linear trend on daily counts.
+2. Confidence calibration of edge model using cloud-confirmed labels.
+3. Drift watch: detect sudden class distribution changes by device.
 
 Exit criteria:
-1) Dashboard includes a dedicated "Data" analytics page.
-2) Export CSV endpoint exists for report generation.
-3) At least one actionable campaign recommendation is generated from real data.
+1. Dashboard includes a dedicated "Data" analytics page.
+2. Export CSV endpoint exists.
+3. At least one actionable campaign recommendation generated from real data.
 
-### CP9 - Edge Image Retention Controls (Optional but Plausible)
+### CP9 — Edge Image Retention Controls (Optional)
 
-Scope:
-- Add dashboard command to request edge cleanup.
-- Send command over MQTT control topic.
-- Edge acknowledges and deletes old images by policy.
+Scope: dashboard command → MQTT control topic → Pi deletes old images by policy, acknowledges.
 
-Exit criteria:
-- Operator can trigger image cleanup from dashboard and see success/failure response.
+Exit criteria: operator can trigger image cleanup from dashboard and see success/failure response.
 
-## Improvements Backlog (After Baseline)
+## 12. Improvements Backlog
 
-1) ROI cropping before inference (detect object region, crop majority background) to reduce inference time.
-2) Better dataset collection + retraining loop.
-3) Rich device health telemetry (disk usage, last heartbeat, packet rate).
-4) Cloud DB migration after local DB baseline stabilizes.
-5) Human review workflow for selected low-confidence events.
+1. Better dataset collection + retraining loop.
+2. Rich device health telemetry (disk usage, last heartbeat, packet rate).
+3. Cloud DB migration after local DB baseline stabilises.
+4. Human review workflow for selected low-confidence events.
+5. Drift detection: alert when class distribution shifts significantly.
 
-## Non-Goals for Initial Release
+## 13. Non-Goals for Initial Release
 
-1) Bin fullness detection.
-2) Full battery telemetry.
-3) Complex model optimization before collecting baseline metrics.
-
-## Open Questions to Confirm with Supervisors
-
-1) Official latency KPI to grade against (edge-only vs end-to-end).
-2) Required evaluation dataset size for claiming 80 percent accuracy.
-3) How many events must be collected for baseline report.
-4) Whether Gemini can be treated as reference label in assessment reports.
-
-## Implementation Artifacts (CP2-CP6)
-
-Implemented files:
-
-1) cp2_cp6/event_schema.py
-- Shared schema encode/decode and payload validation.
-
-2) cp2_cp6/edge_event_publisher_pi.py
-- mmWave trigger profiles (inside_bin, outside_bin).
-- Camera capture on trigger.
-- Local inference and recyclable keyword check.
-- Optional affirmative sound playback.
-- MQTT publish with QoS 1, dual topics (event + image), and optional duplicate publish mode.
-- CP5 integration with FIFO SQLite outbox, retries, and backoff.
-
-3) cp2_cp6/pi_outbox.py
-- Pi-side FIFO SQLite queue for event/image delivery tracking.
-
-4) cp2_cp6/server_event_receiver_laptop.py
-- TLS MQTT receiver.
-- Schema validation.
-- SQLite idempotent upsert keyed by event_id.
-- Duplicate accounting through receive_count.
-- Image topic ingestion and local image persistence on laptop.
-- CP6 cloud verification and verification status/result persistence.
-
-5) cp2_cp6/nanogpt_verifier.py
-- NanoGPT/Qwen image classification helper adapted for laptop-side verification.
-
-6) cp2_cp6/requirements-pi.txt
-7) cp2_cp6/requirements-laptop.txt
-
-Operational guide:
-
-- Use CP2_TO_CP4_SETUP.md for setup commands, CP5/CP6 runtime commands, dedup test flow, image transport flow, and manual hardware/network steps required on laptop and Pi.
-- Use CP7_DEMO_2PI_RUNBOOK.md for end-to-end demo commands (broker, receiver, dashboard, and two Pi clients).
-
-## Reporting and Analytics Deliverables
-
-For supervisor-facing demos and reports:
-1) Include a "Data" page showing spread of recyclables/non-recyclables over a selectable time window.
-2) Include per-device unknown-rate and mismatch-rate to identify confusion hotspots.
-3) Export CSV snapshots from the local DB for campaign planning evidence.
+1. Any form of payload decryption or key rotation.
+2. Multi-broker federation.
+3. Over-the-air model update.

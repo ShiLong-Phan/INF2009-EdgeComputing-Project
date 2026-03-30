@@ -17,9 +17,6 @@ As an aside, I think what my professor wants are measurements of important metri
 
 One-day practical PASO checklist (before CP8/CP9, then after):
 
-0) Keep Documentation.md command-free
-- All executable commands are listed in this file only.
-
 1) Baseline capture (no new optimizations yet) (done)
 
 Laptop commands (PowerShell):
